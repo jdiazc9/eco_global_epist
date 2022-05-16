@@ -8,81 +8,93 @@ library(tidyverse)
 library(cowplot)
 
 # set seed for reproducibility
-set.seed(0)
+set.seed(1)
 
 # load data sets
-data <- lapply(list.files('../data_sets/', full.names = T), FUN = function(file) read.csv(file))
+files <- list.files('../data_sets', full.names = T)
+data <- lapply(files, FUN = function(file) read.csv(file))
 
 # wrapper function: leave part of the data as out_of_sample, fit FEEs with the remaining data, use method to predict function and compare to observed function
 pred_vs_obs <- function(data, f_out_of_sample = 0.2) {
   
-  # leave 20% of data out-of-sample (make sure that the 'empty' community is not one of them)
-  which_out_of_sample <- sample(1:nrow(data), size = round(0.2*nrow(data)))
+  # average replicates
+  data <- matrix2string(data)
+  data <- aggregate(formula = fun ~ .,
+                    data = data,
+                    FUN = mean)
+
+  # leave 20% of data out-of-sample
+  which_out_of_sample <- sample(1:nrow(data), size = round(0.3*nrow(data)))
   out_of_sample <- data[which_out_of_sample, ]
   data <- data[-which_out_of_sample, ]
-  empty_comm <- which(sapply(1:nrow(out_of_sample),
-                             FUN = function(i) all(out_of_sample[i, 1:(ncol(out_of_sample) - 1)] == 0)))
-  if (length(empty_comm) >  0) {
+  
+  # make sure the 'empty' community is left in sample
+  empty_comm <- which(out_of_sample$community == '')
+  if (length(empty_comm)) {
     data <- rbind(data, out_of_sample[empty_comm, ])
     out_of_sample <- out_of_sample[-empty_comm, ]
   }
   
   # fit FEEs with the remaining data
-  ge_data <- makeGEdata(matrix2string(data), exclude.single.mut = F)
-  fits <- makeGEfits(ge_data)
-  eps <- inferEps(ge_data)
+  ge_data <- makeGEdata(data)
+  fits <- makeFEEs(ge_data)
   
-  # use method to predict the function of the out of sample communities
-  out_of_sample <- matrix2string(out_of_sample)
-  predicted_f <- predictF(out_of_sample$community,
-                          data = matrix2string(data),
-                          coeff = fits,
-                          eps = eps)
-  predicted_f <- data.frame(community = names(predicted_f),
-                            predicted_f = as.numeric(predicted_f))
-  
-  pred_obs <- merge(out_of_sample, predicted_f)
-  
-  r_squared <- cor(pred_obs$fun, pred_obs$predicted_f)^2
-  
-  return(list(df = pred_obs,
-              r_squared = r_squared))
+  # make sure that all FEEs could be fitted (there is enough data in-sample for it), otherwise return NAs
+  if (any(is.na(fits[, 'b']))) {
+    
+    return(list(df = data.frame(community = character(0),
+                                fun = numeric(0),
+                                predicted_f = numeric(0)),
+                r_squared = numeric(0)))
+    
+  } else {
+    
+    eps <- inferAllResiduals(ge_data)
+    
+    # use method to predict the function of the out of sample communities
+    predicted_f <- predictF_fullClosure(out_of_sample$community,
+                                        data,
+                                        eps)
+    
+    pred_obs <- merge(out_of_sample, predicted_f, by = 'community', suffixes = c('_obs', '_pred'))
+    
+    r_squared <- cor(pred_obs$fun_obs, pred_obs$fun_pred)^2
+    
+    return(list(df = pred_obs,
+                r_squared = r_squared))
+    
+  }
   
 }
 
 i <- 3 #for (i in 1:5) {
-
-  # if there are multiple measurements of a same community, average them
-  colnames(data[[i]])[ncol(data[[i]])] <- 'fun'
-  data[[i]] <- aggregate(formula = fun ~ .,
-                         data = data[[i]],
-                         FUN = mean)
   
   # for the phytoplankton biomass dataset (Ghedini et al., scale functions by 1e-4 for easier readability)
   if (i == 3) data[[i]][, ncol(data[[i]])] <- data[[i]][, ncol(data[[i]])]/1e4
   
   # get predicted vs observed plots and r_squared (repeat 50 times for every data set)
-  po <- data.frame(community = character(0),
-                   fun = numeric(0),
-                   predicted_f = numeric(0))
+  po <- data.frame(run = numeric(0),
+                   community = character(0),
+                   fun_obs = numeric(0),
+                   fun_pred = numeric(0))
   r_squared <- NULL
   
-  for (n in 1:50) {
+  for (n in 1:100) {
     print(c(i, n))
     po_i <- pred_vs_obs(data[[i]])
     
-    po <- rbind(po, po_i$df)
+    po <- rbind(po, cbind(data.frame(run = rep(n, nrow(po_i$df))),
+                          po_i$df))
     r_squared <- c(r_squared, po_i$r_squared)
   }
   
-  po_i <- po_i$df
-  
-  range <- c(min(c(po_i$predicted_f, po_i$fun)),
-             max(c(po_i$predicted_f, po_i$fun)))
+  po_i <- po[po$run == unique(po$run)[which.min(abs(r_squared - 0.75))], ]
+  range <- c(min(c(po_i$fun_obs, po_i$fun_pred)),
+             max(c(po_i$fun_obs, po_i$fun_pred)))
   
   # plot
   plot1 <-
-    ggplot(po_i, aes(x = predicted_f, y = fun)) +
+    ggplot(po_i, aes(x = fun_pred, y = fun_obs)) +
       geom_abline(slope = 1,
                   intercept = 0,
                   color = '#d1d3d4') +

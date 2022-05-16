@@ -6,17 +6,10 @@ library(scales)
 library(gridExtra)
 library(tidyverse)
 
-# load data sets
-data <- lapply(list.files('../pyoverdine_data/', full.names = T), FUN = function(file) read.table(file, sep = '\t', header = T))
-
-# communities that were not assembled in replicate 1 will be used to test prediction method ('out of sample' = oos)
-which_oos <- data[[2]]$community[!(data[[2]]$community %in% data[[1]]$community)]
-oos <- merge(data[[2]][data[[2]]$community %in% which_oos, ],
-             data[[3]][data[[3]]$community %in% which_oos, ],
-             by = 'community',
-             suffixes = c('.rep1', '.rep2'))
-
-data <- lapply(data, FUN = function(x) x[!(x$community %in% which_oos), ])
+# load data
+data <- read.csv('../pyoverdine_data/training_set.csv')
+data <- lapply(1:3,
+               FUN = function(i) matrix2string(data[, c(1:8, 8+i)]))
 
 # full species names
 sp_names <- setNames(c('E. mori',
@@ -27,9 +20,9 @@ sp_names <- setNames(c('E. mori',
                        'R. ornithinolytica',
                        'P. cremoricolorata',
                        'P. savastanoi'),
-                     1:8)
+                     paste('sp', 1:8, sep = '_'))
 
-ge_data <- lapply(data, FUN = makeGEdata, exclude.single.mut = T)
+ge_data <- lapply(data, FUN = makeGEdata)
 ge_data <- merge(merge(ge_data[[1]], ge_data[[2]],
                        by = c('background', 'knock_in'),
                        suffixes = c('.rep1', '.rep2'),
@@ -213,9 +206,13 @@ ggsave(myplot,
        limitsize = F)
 
 # predicted function of out of sample communities
-oos$fun.mean <- rowMeans(oos[, 2:3])
-oos$fun.sd <- sapply(1:nrow(oos),
-                     FUN = function(i) as.numeric(sd(oos[i, 2:3])))
+test_set <- read.csv('../pyoverdine_data/test_set.csv')
+test_set <- merge(matrix2string(test_set[, c(1:9)]), matrix2string(test_set[, c(1:8, 10)]),
+                  by = 'community', all = T, suffixes = c('.rep1', '.rep2'))
+
+test_set$fun.mean <- rowMeans(test_set[, 2:3])
+test_set$fun.sd <- sapply(1:nrow(test_set),
+                          FUN = function(i) as.numeric(sd(test_set[i, 2:3])))
 
 data <- data[, c('community', 'fun.mean')]
 colnames(data)[2] <- 'fun'
@@ -224,14 +221,14 @@ ge_data <- ge_data[, c('background', 'knock_in', 'background_f.mean', 'd_f.mean'
 colnames(ge_data) <- gsub('.mean', '', colnames(ge_data))
 ge_data$knock_in <- setNames(names(sp_names), sp_names)[as.character(ge_data$knock_in)]
 
-fits <- makeGEfits(ge_data)
-eps <- inferEps(ge_data)
+fits <- makeFEEs(ge_data)
+eps <- inferAllResiduals(ge_data)
 
-predicted_f <- predictF(oos$community, data, fits, eps)
-predicted_f <- data.frame(community = names(predicted_f),
-                          fun_pred = as.numeric(predicted_f))
+predicted_f <- predictF_fullClosure(test_set$community, data, eps)
 
-pred_obs <- merge(predicted_f, oos, by = 'community')
+pred_obs <- merge(predicted_f, test_set, by = 'community')
+pred_obs <- pred_obs[, c('community', 'fun', 'fun.mean', 'fun.sd')]
+colnames(pred_obs)[2] <- 'fun_pred'
 
 r_squared <- cor(pred_obs$fun_pred, pred_obs$fun.mean)^2
 

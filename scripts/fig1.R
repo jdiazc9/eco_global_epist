@@ -6,7 +6,7 @@ library(scales)
 library(gridExtra)
 
 # load data sets
-data <- lapply(list.files('../data_sets/', full.names = T), FUN = function(file) read.csv(file))
+data <- lapply(list.files('../data_sets', full.names = T), FUN = function(file) read.csv(file))
 
 # full species names
 sp_names <- vector(mode = 'list', length = length(data))
@@ -38,7 +38,7 @@ for (i in 1:5) {
   if (i == 3) data[[i]][, ncol(data[[i]])] <- data[[i]][, ncol(data[[i]])]/1e4
   
   # extract F vs. dF data from combinatorial assemblages
-  ge_data <- makeGEdata(matrix2string(data[[i]]), exclude.single.mut = F)
+  ge_data <- makeGEdata(matrix2string(data[[i]]))
   
   # remove species for which there are not at least 5 data points (most data sets are combinatorially incomplete)
   npoints <- sapply(unique(ge_data$knock_in),

@@ -1,21 +1,26 @@
 rm(list = ls())
 
 ### LIBRARIES
-run_tests <- FALSE # set to TRUE to run tests in every execution
-if (run_tests) require(testthat)
+
+require(testthat)
 require(MASS)
 require(ggplot2)
 require(gtools)
+require(scales)
+require(gridExtra)
+require(tidyverse)
+require(combinat)
 
+run_tests <- FALSE # set to TRUE to run tests in every execution
 
 ### FUNCTIONS & TESTS
 
-orderNames <- function(communities) {
+orderName <- function(community) {
   
   # order community names with the form 'sp2,sp2,sp3,...' so that species consistently
   # appear in alphabetical order
   
-  as.character(sapply(communities,
+  as.character(sapply(community,
                       FUN = function(s) paste(sort(strsplit(s, split = ',')[[1]]),
                                               collapse = ',')))
 }
@@ -26,11 +31,12 @@ string2matrix <- function(data) {
   # (species present separated by commas with no spaces, e.g. 'sp1,sp2,sp3,...') and
   # the second one community functions, and converts it to binary matrix format
   
-  species <- unique(unlist(sapply(data[, 1],
-                                  FUN = function(community) strsplit(community, split = ',')[[1]])))
+  species <- sort(unique(unlist(lapply(data[, 1],
+                                       FUN = function(community) strsplit(community, split = ',')[[1]]))))
   
-  data_out <- t(sapply(1:nrow(data),
-                       FUN = function(i) as.numeric(species %in% strsplit(data[i, 1], split = ',')[[1]])))
+  data_out <- lapply(1:nrow(data),
+                     FUN = function(i) matrix(as.numeric(species %in% strsplit(data[i, 1], split = ',')[[1]]), nrow = 1))
+  data_out <- do.call(rbind, data_out)
   colnames(data_out) <- species
   
   data_out <- cbind(data_out, fun = data[, 2])
@@ -47,7 +53,7 @@ matrix2string <- function(data) {
   
   communities <- sapply(1:nrow(data),
                         FUN = function(i) paste(species[data[i, -ncol(data)] == 1], collapse = ','))
-  communities <- orderNames(communities)
+  communities <- orderName(communities)
   
   return(data.frame(community = communities,
                     fun = data[, ncol(data)]))
@@ -56,197 +62,381 @@ matrix2string <- function(data) {
 
 if (run_tests) {
   test_that('Name ordering',{
-    expect_equal(orderNames('1,3,2'), '1,2,3')
-    expect_equal(orderNames(c('B,C,A,F,D', 'y,x,z')), c('A,B,C,D,F', 'x,y,z'))
+    expect_equal(orderName('1,3,2'), '1,2,3')
+    expect_equal(orderName(c('B,C,A,F,D', 'y,x,z')), c('A,B,C,D,F', 'x,y,z'))
   })
 }
 
-# get number of mutations of a given genotype/array of genotype names (return 0 if input genotype is NA)
-nMut <- function(genotypes) {
-  as.numeric(sapply(genotypes,
-                    FUN = function(genotype) {
-                      if (is.na(genotype)) return(0)
-                      else return(length(strsplit(genotype, split = ',')[[1]]))
-                    }))
-}
-
-if (run_tests) {
-  test_that('Number of mutations',{
-    expect_equal(nMut('1,2,3'), 3)
-    expect_equal(nMut('lorem,ipsum'), 2)
-    expect_equal(nMut(NA), 0)
-  })
-}
-
-# format data: from an (incomplete) genotype-to-fitness map to 'species fitness effects' data
-makeGEdata <- function(data, exclude.single.mut = FALSE, baseline.fun = 0) {
+nSpecies <- function(community) {
   
-  # data must be a data frame where he first column corresponds to genotype names and the second column corresponds to genotype fitness
-  # genotype names should be such that present mutations appear separated by commas with no spaces, e.g. 'i,j,k,...'
+  # returns the number of species in a community (given in 'sp1,sp2,sp3,...' format)
+  # returns 0 if input is NA
+  
+  as.numeric(sapply(community,
+                    FUN = function(comm) {
+                      if (is.na(comm)) return(0)
+                      else return(length(strsplit(comm, split = ',')[[1]]))
+                    }))
+  
+}
+if (run_tests) {
+  test_that('Number of species',{
+    expect_equal(nSpecies('1,2,3'), 3)
+    expect_equal(nSpecies('lorem,ipsum'), 2)
+    expect_equal(nSpecies(NA), 0)
+  })
+}
+
+containsSpecies <- function(species, community) {
+  
+  # returns TRUE if species is present in community, FALSE otherwise
+  
+  return(sapply(community,
+                FUN = function(comm) species %in% strsplit(comm, split = ',')[[1]]))
+  
+}
+
+makeGEdata <- function(data) {
+  
+  # takes a mapping between community structures and functions and returns a data frame of species functional effects
+  # input data must be a data frame where he first column corresponds to genotype names and the second column corresponds to genotype fitness
+  # genotype names should be such that present mutations appear separated by commas with no spaces, e.g. 'sp1,sp2,sp3,...'
+  # use matrix2string() function to convert data to this format if needed
   
   # name columns of data
-  colnames(data) <- c('genot', 'f')
+  colnames(data) <- c('community', 'f')
   
   # order community names alphabetically
-  data[, 1] <- orderNames(data[, 1])
+  data[, 1] <- orderName(data[, 1])
   
   # if there are multiple instances of a same genotype, take the average and print a warning
   if(!all(table(data[, 1]) == 1)) {
     warning(paste('Multiple instances of a same combination in input data set:\n',
                   paste(names(table(data[, 1]))[table(data[, 1]) > 1], collapse = '\n'),
                   '\nAveraging F to proceed.', sep = ''))
-    data <- aggregate(formula = f ~ genot,
+    data <- aggregate(formula = f ~ community,
                       data = data,
                       FUN = mean)
   }
   
-  # extract mutation names
-  muts <- sort(unique(unlist(strsplit(data[, 1], split = ','))))
-  n_muts <- length(muts)
+  # extract species names
+  species <- sort(unique(unlist(strsplit(data[, 1], split = ','))))
+  n_species <- length(species)
   
-  # extract single mutant data
-  single_mut <- data[nMut(data$genot) == 1, ]
-  
-  # fitness as named array
+  # functions as named array
   f <- setNames(data[, 2], data[, 1])
   
   # output: data frame where the effect of each species on a background community is isolated
   ge_data <- do.call(rbind,
-                     lapply(muts,
-                            FUN = function(mut_i) {
+                     lapply(species,
+                            FUN = function(sp) {
                               
-                              # all communities that contain mut_i
-                              k_i <- data$genot[grepl(mut_i, data$genot)]
+                              # fetch all communities in sample that contain species sp
+                              knockins <- data$community[containsSpecies(sp, data$community)]
                               
-                              # corresponding backgrounds
-                              bg_i <- as.character(sapply(k_i,
-                                                          FUN = function(x) {
-                                                            x <- strsplit(x, split = ',')[[1]]
-                                                            x <- x[x != mut_i]
-                                                            x <- paste(x, collapse = ',')
-                                                            return(x)
-                                                          }))
+                              # backgrounds corresponding to those communities
+                              backgrounds <- as.character(sapply(knockins,
+                                                                 FUN = function(x) {
+                                                                   x <- strsplit(x, split = ',')[[1]]
+                                                                   x <- x[x != sp]
+                                                                   x <- paste(x, collapse = ',')
+                                                                   return(x)
+                                                                 }))
                               
                               # functions of backrounds and backgrounds + knock-ins
-                              f_k_i <- as.numeric(f[k_i])
-                              f_bg_i <- as.numeric(f[bg_i])
+                              f_knockins <- f[names(f) %in% knockins]
+                              f_knockins <- data.frame(community = names(f_knockins),
+                                                       fun.knockin = as.numeric(f_knockins))
                               
-                              # return as data frame
-                              ge_data_i <- data.frame(background = bg_i,
-                                                      knock_in = mut_i,
-                                                      background_f = f_bg_i,
-                                                      d_f = f_k_i - f_bg_i)
-                              ge_data_i <- ge_data_i[!is.na(ge_data_i$background_f) & !is.na(ge_data_i$d_f), ]
-                              rownames(ge_data_i) <- NULL
+                              f_backgrounds <- f[names(f) %in% backgrounds]
+                              f_backgrounds <- data.frame(community = names(f_backgrounds),
+                                                          fun.backgrund = as.numeric(f_backgrounds))
                               
-                              return(ge_data_i)
+                              f_knockins$background_community <- sapply(f_knockins$community,
+                                                                        FUN = function(x) {
+                                                                          xout <- strsplit(x, split = ',')[[1]]
+                                                                          xout <- xout[xout != sp]
+                                                                          xout <- paste(xout, collapse = ',')
+                                                                          return(xout)
+                                                                        })
+                              
+                              fun <- merge(f_backgrounds, f_knockins, by.x = 'community', by.y = 'background_community', all = T, suffixes = c('.bg', '.knockin'))
+                              fun$df <- fun$fun.knockin - fun$fun.backgrund
+                              fun <- fun[!is.na(fun$fun.backgrund) & !is.na(fun$fun.knockin), ] # keep only rows where the function of both the background and the knockin are known
+                              
+                              # build data frame
+                              df <- data.frame(background = fun$community,
+                                               knock_in = sp,
+                                               background_f = fun$fun.backgrund,
+                                               d_f = fun$df)
+                              
+                              return(df)
                               
                             }))
   
-  # attach monoculture data if required, background community names set to NA and functions set to baseline.fun (0 by default)
-  # (could be set to 1 if e.g. the 'no background' instance corresponds to a wild-type genotype)
-  if(nrow(single_mut) > 0 & exclude.single.mut == FALSE) {
-    ge_data <- rbind(ge_data,
-                     data.frame(background = NA,
-                                knock_in = single_mut$genot,
-                                background_f = baseline.fun,
-                                d_f = single_mut$f))
-  }
-    
   return(ge_data)
   
 }
 
-# plot global epistasis patterns (expects data in GE format)
-plotGE <- function(ge_data, title = '') {
+plotFEEs <- function(ge_data) {
   
-  # If raw.data = TRUE, this function expects the data in the global input format,
-  # i.e. a two-column data frame where the first column corresponds to genotype names
-  # (with mutations separated by commas and no spaces: A,B,C,...)
-  # and the second column contains fitness values for each genotype.
-  # In this case, data are first formatted through the makeGEdata function.
-  # If raw.data = FALSE, the function expects a data frame that has already been
-  # formatted through the makeGEdata function.
+  # make dF-vs-F plots
   
-  geplot <- 
-    ggplot(ge_data, aes(x = background_f, y = d_f, color = knock_in)) +
-    geom_abline(slope = 0,
-                intercept = 0,
-                linetype = 'dashed') +
-    geom_point() +
-    geom_smooth(method = 'lm',
-                formula = y~x,
-                se = FALSE) +
-    scale_x_continuous(name = 'F (background)') +
-    scale_y_continuous(name = 'dF') +
-    facet_wrap(~knock_in) +
-    theme_bw() +
-    theme(panel.grid = element_blank(),
-          strip.background = element_blank(),
-          strip.text = element_text(hjust = 0),
-          legend.position = 'none') +
-    ggtitle(title)
+  p <-
+    ggplot(ge_data, aes(x = background_f, y = d_f)) +
+      geom_abline(slope = 0,
+                  intercept = 0,
+                  color = '#d1d3d4') +
+      geom_point(shape = 1,
+                 cex = 2) +
+      geom_smooth(method = 'lm',
+                  formula = y~x,
+                  color = 'firebrick1',
+                  se = F,
+                  fullrange = T) +
+      scale_x_continuous(breaks = pretty_breaks(n = 3),
+                         name = 'Function of ecological background [a.u.]') +
+      scale_y_continuous(breaks = pretty_breaks(n = 3),
+                         name = 'dF [a.u.]') +
+      facet_wrap(~knock_in) +
+      theme_bw() +
+      theme(panel.grid = element_blank(),
+            strip.background = element_blank(),
+            strip.text = element_text(face = 'italic',
+                                      size = 10),
+            aspect.ratio = 0.6,
+            axis.text = element_text(size = 16),
+            axis.title = element_text(size = 18),
+            panel.border = element_blank(),
+            panel.background = element_blank(),
+            legend.position = 'none') +
+      annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+      annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
   
-  print(geplot)
-  return(geplot)
+  print(p)
+  
+  return(p)
   
 }
 
-# make linear fits assuming no branching (expects data in GE format)
-makeGEfits <- function(ge_data) {
+closestPaths <- function(target_comm, comm_list) {
   
-  muts <- unique(ge_data$knock_in)
+  # given a focal community (comm) and a list of other communities (comm_list), returns those in comm_list that are closest to comm (in terms of species addition/removal)
+  
+  all_comms <- data.frame(community = c(target_comm, comm_list),
+                          fun = NA)
+  all_comms <- string2matrix(all_comms)
+  
+  comm <- all_comms[1, 1:(ncol(all_comms) - 1)]
+  comm_list <- all_comms[2:nrow(all_comms), 1:(ncol(all_comms) - 1), drop = F]
+  
+  dist <- sapply(1:nrow(comm_list),
+                 FUN = function(i) sum(abs(comm_list[i, ] - comm)))
+  
+  which_min <- which(dist == min(dist))
+  closest_comms <- comm_list[which_min, , drop = F]
+  
+  # paths to comm
+  paths <- lapply(1:nrow(closest_comms),
+                  FUN = function(i) comm - closest_comms[i, ])
+  paths <- do.call(rbind, paths)
+  
+  sources <- matrix2string(cbind(as.data.frame(closest_comms), fun = NA))$community
+  
+  # return info
+  return(cbind(source = sources, target = target_comm, dist = dist[which_min], as.data.frame(paths)))
+  
+}
+
+fetchResiduals <- function(paths) {
+  
+  # fetch which residuals (epsilons) take part in a given set of paths (from a source to a target community)
+  # accounts for every possible path order (e.g. i->j->k, j->i->k, k->i->j, ...)
+  # variable naming: eps_i(s) is named s+i (e.g. 'i,j+k', 'i,k+j', 'i,j,k+l', ...)
+  
+  eps <- NULL
+  
+  for (p in 1:nrow(paths)) {
+    
+    traj <- paths[p, 4:ncol(paths)]
+    traj <- colnames(traj)[abs(traj[1, ]) == 1]
+    traj <- do.call(rbind, permn(traj))
+    
+    eps <- c(eps,
+             unlist(lapply(1:nrow(traj), FUN = function(t) {
+               
+               traj_i <- traj[t, ]
+               cumtraj_i <- orderName(sapply(1:length(traj_i), FUN = function(i) paste(traj_i[1:i], collapse = ',')))
+               cumtraj_i <- c(paths$source[p],
+                              orderName(paste(paths$source[p], cumtraj_i, sep = ',')))
+               
+               cumtraj_i <- sapply(cumtraj_i, # if there are repetitions of species, that means the species is being removed instead of added
+                                   FUN = function(x) {
+                                     
+                                     xtab <- table(strsplit(x, split = ',')[[1]])
+                                     removed_sp <- names(xtab)[xtab > 1]
+
+                                     xout <- strsplit(x, split = ',')[[1]]
+                                     xout <- paste(xout[!(xout %in% removed_sp)], collapse = ',')
+                                     
+                                     return(xout)
+                                     
+                                   })
+               
+               eps_i <- paste(cumtraj_i[-length(cumtraj_i)], traj_i, sep = '+')
+               eps_i <- sapply(eps_i, # if knocked-in species is in background, it means it's a species removal
+                               FUN = function(x) {
+                                 
+                                 knock_in <- strsplit(x, split = '\\+')[[1]][2]
+                                 background <- strsplit(x, split = '\\+')[[1]][1]
+                                 background <- strsplit(background, split = ',')[[1]]
+                                 
+                                 xout <- paste(background[background != knock_in], collapse = ',')
+                                 xout <- paste(xout, knock_in, sep = '+')
+                                 
+                                 return(xout)
+                                 
+                               })
+               eps_i <- as.character(eps_i)
+               
+               return(eps_i)
+               
+             })))
+    
+  }
+  
+  return(eps)
+  
+}
+
+pathSteps <- function(target, source, single.traj = F) {
+
+  # get steps in trajectory from source to target communities through addition/removal of species
+  # is the closure condition is satisfied, a single trajectory is sufficient (speeds up calculations)
+  
+  path <- closestPaths(target, source)
+  
+  traj <- path[1, 4:ncol(path), drop = F]
+  traj <- colnames(traj)[abs(traj[1, ]) == 1]
+  if (single.traj) {
+    traj <- matrix(traj, nrow = 1)
+  } else {
+    traj <- do.call(rbind, permn(traj))
+  }
+  
+  traj_steps <- lapply(1:nrow(traj),
+                       FUN = function(i) {
+                         
+                         # trajectory
+                         cumtraj <- orderName(sapply(1:length(traj[i, ]), FUN = function(j) paste(traj[i, 1:j], collapse = ',')))
+                         cumtraj <- c(source,
+                                      sapply(1:length(cumtraj), FUN = function(j) orderName(paste(c(strsplit(source, split = ',')[[1]],
+                                                                                                    cumtraj[j]), collapse = ','))))
+                         cumtraj <- sapply(cumtraj, # if there are repetitions of species, that means the species is being removed instead of added
+                                           FUN = function(x) {
+                                             
+                                             xtab <- table(strsplit(x, split = ',')[[1]])
+                                             removed_sp <- names(xtab)[xtab > 1]
+                                             
+                                             xout <- strsplit(x, split = ',')[[1]]
+                                             xout <- paste(xout[!(xout %in% removed_sp)], collapse = ',')
+                                               
+                                             return(xout)
+                                               
+                                           })
+                         cumtraj <- as.character(cumtraj)
+                         
+                         # knock-ins at each step
+                         knockins <- traj[i, ]
+                         
+                         # backgrounds
+                         backgrounds <- cumtraj[-length(cumtraj)]
+                         backgrounds <- sapply(1:length(backgrounds),
+                                               FUN = function(i) {
+                                                 xout <- strsplit(backgrounds[i], split = ',')[[1]]
+                                                 xout <- xout[xout != knockins[i]]
+                                                 xout <- paste(xout, collapse = ',')
+                                                 return(xout)
+                                               })
+                         backgrounds <- as.character(backgrounds)
+                         
+                         # signs
+                         signs <- sapply(knockins, FUN = function(x) path[1, x])
+                         signs <- as.numeric(signs)
+                         
+                         return(list(trajectory = cumtraj,
+                                backgrounds = backgrounds,
+                                knock_ins = knockins,
+                                signs = signs))
+                         
+                       })
+  
+  if(single.traj) traj_steps <- traj_steps[[1]]
+  
+  return(traj_steps)
+
+}
+
+makeFEEs <- function(ge_data) {
+  
+  # make linear fits (input is a data.frame generated with makeGEdata)
+  
+  species <- sort(unique(ge_data$knock_in))
   fits <- do.call(rbind,
-                  lapply(muts,
-                         FUN = function(mut_i){
-                           data.frame(a = lm(data = ge_data[ge_data$knock_in == mut_i, ], formula = d_f~background_f)$coefficients[1],
-                                      b = lm(data = ge_data[ge_data$knock_in == mut_i, ], formula = d_f~background_f)$coefficients[2])
+                  lapply(species,
+                         FUN = function(sp){
+                           data.frame(a = lm(data = ge_data[ge_data$knock_in == sp, ], formula = d_f~background_f)$coefficients[1],
+                                      b = lm(data = ge_data[ge_data$knock_in == sp, ], formula = d_f~background_f)$coefficients[2])
                          }))
-  rownames(fits) <- muts
+  rownames(fits) <- species
   
   return(fits)
   
 }
 
-# infer the values of the unknown epsilons (expects data in GE format)
-inferEps <- function(ge_data) {
-  
-  # split single mutants from rest of the data
-  single_mut <- ge_data[nMut(ge_data$background) == 0, ]
-  ge_data <- ge_data[nMut(ge_data$background) > 0, ]
+inferAllResiduals <- function(ge_data) {
+
+  # apply closure condition to the WHOLE landscape to infer values of residuals
+  # only advisable for <10 species (otherwise pseudoinverse computation explodes)
   
   # get linear fits
-  fits <- makeGEfits(ge_data)
+  fits <- makeFEEs(ge_data)
   
-  # fetch mutation names and all combinatorial landscape
-  muts <- unique(ge_data$knock_in)
-  genots <- orderNames(unlist(sapply(1:length(muts),
-                                     FUN = function(i) sapply(combn(muts,
-                                                                    i,
-                                                                    simplify = FALSE),
-                                                              FUN = paste, collapse = ','))))
+  # fetch species names and build all combinatorial arrangements
+  species <- sort(unique(ge_data$knock_in))
+  communities <- orderName(unlist(sapply(1:length(species),
+                                         FUN = function(i) sapply(combn(species,
+                                                                        i,
+                                                                        simplify = FALSE),
+                                                                  FUN = paste, collapse = ','))))
+  communities <- c('<empty>', communities) # attach the 'empty' community
   
   # list epsilons that are known from observations
+  ge_data$background[ge_data$background == ''] <- '<empty>'
   known_eps <- setNames(ge_data$d_f- (fits[ge_data$knock_in, 'a'] + fits[ge_data$knock_in, 'b']*ge_data$background_f),
                         paste(ge_data$background, ge_data$knock_in, sep = '+'))
   
   # estimate standard deviations of epsilons
-  sigma <- sapply(muts,
-                  FUN = function(mut_i) sd(known_eps[grepl(paste('+', mut_i, sep = ''), names(known_eps))]))
+  sigma <- sapply(species,
+                  FUN = function(sp) sd(known_eps[grepl(paste('\\+', sp, sep = ''), names(known_eps))]))
   
   # arrange epsilons in matrix form (rows: backgrounds, columns: knock-ins), this makes them easier to access later on
-  eps_matrix <- matrix(NA, nrow = length(genots), ncol = length(muts))
-  colnames(eps_matrix) <- muts
-  rownames(eps_matrix) <- genots
+  eps_matrix <- matrix(NA, nrow = length(communities), ncol = length(species))
+  colnames(eps_matrix) <- species
+  rownames(eps_matrix) <- communities
+  
+  # some of the epsilons are known from the observations: add them to the matrix
   for (i in 1:length(known_eps)) {
-    eps_matrix[strsplit(names(known_eps), split = '\\+')[[i]][1],
-               strsplit(names(known_eps), split = '\\+')[[i]][2]] <- known_eps[i]
-  }
-  for (mut_i in muts) {
-    eps_matrix[grepl(mut_i, genots), mut_i] <- NaN # elements of the matrix where the knock-in is already present in the background are set to NaN, other elements are either numeric (known epsilons) or NA (incognitas)
+    eps_matrix[strsplit(names(known_eps)[i], split = '\\+')[[1]][1],
+               strsplit(names(known_eps)[i], split = '\\+')[[1]][2]] <- known_eps[i]
   }
   
-  # epsilons in vector form
+  # elements of the matrix where the knock-in is already present in the background are set to NaN, other elements are either numeric (known epsilons) or NA (incognitas)
+  for (sp in species) {
+    eps_matrix[containsSpecies(sp, rownames(eps_matrix)), sp] <- NaN
+  }
+  
+  # epsilons in vector form (makes it easier to operate with them)
   eps <- as.data.frame(matrix(NA, nrow = length(eps_matrix), ncol = 2))
   for (i in 1:nrow(eps_matrix)) {
     for (j in 1:ncol(eps_matrix)) {
@@ -259,69 +449,68 @@ inferEps <- function(ge_data) {
   rownames(eps) <- eps[, 1]
   eps <- matrix(eps[, 2], dimnames = list(eps[, 1], 'eps'))
   
+  rownames(eps) <- gsub('<empty>', '', rownames(eps))
+  communities[communities == '<empty>'] <- ''
+  
   # build M matrix
-  # i and j are two arbitrary mutations
+  # i and j are two arbitrary species
   # B is an arbitrary background (not containing i or j), Bi and Bj are the same backgrounds containing also i and j respectively
-  # a_i, b_i are the intercept and slope of the fit for species i
+  # a_i, b_i are the intercept and slope of the fit FEE for species i
   # e_i(B) is the epsilon for species i on background B
   # general form of the constraint:
   #   a_i*b_j + (1 + b_j)*e_i(B) + e_j(Bi) = a_j*b_i + (1 + b_i)*e_j(B) + e_i(Bj)
   constraints <- data.frame(B = character(0), i = character(0), j = character(0))
   
-  # list all backgrounds with at least 2 mutations less than the 'all-mutated' genotype
-  bgs_valid <- genots[nMut(genots) < length(muts) - 1]
+  # list all backgrounds with at least 2 species less than the most rich community (containing all species)
+  bgs_valid <- communities[nSpecies(communities) <= length(species) - 2]
   
-  # for each of those backgrounds, get all possible pairs of additional mutations (not in the background itself)
+  # for each of those backgrounds, get all possible pairs of additional species (not in the background itself)
+  sp_valid <- containsSpecies(species, bgs_valid)
   for (i in 1:length(bgs_valid)) {
-    mut_i <- muts[sapply(muts, FUN = function(x) !(x %in% strsplit(bgs_valid[i], split = ',')[[1]]))]
-    pairs_i <- t(combn(mut_i, 2))
+    sp <- species[!sp_valid[, i]]
+    pairs <- t(combn(sp, 2))
     constraints <- rbind(constraints,
                          data.frame(B = as.character(bgs_valid[i]),
-                                    i = pairs_i[, 1],
-                                    j = pairs_i[, 2]))
+                                    i = pairs[, 1],
+                                    j = pairs[, 2]))
   }
   
-  # some of the constraints are redundant; to identify them we need to check which edges of the 'fitness graph' are covered by each constraint
-  isDescendant <- function(genot_1, genot_2) { # check if genot_2 is a descendant of genot_1
-    sapply(genot_2,
-           FUN = function(x) all(strsplit(genot_1, split = ',')[[1]] %in% strsplit(x, split = ',')[[1]]))
+  # some of the constraints are redundant; to identify them we need to check which edges of the 'community graph' are covered by each constraint
+  isDescendant <- function(community_1, community_2) { # check if community_2 is a descendant of community_1 (i.e. all species in community_1 are also in community_2)
+    sapply(community_2,
+           FUN = function(x) all(strsplit(community_1, split = ',')[[1]] %in% strsplit(x, split = ',')[[1]]))
   }
   
   edges <- NULL
-  nMut_genots <- nMut(genots)
-  for (i in 1:length(genots)) {
+  nSpecies_comm <- nSpecies(communities)
+  for (i in 1:length(communities)) {
     edges <- c(edges,
-               paste(genots[i],
-                     genots[nMut_genots == (1 + nMut_genots[i]) & isDescendant(genots[i], genots)],
+               paste(communities[i],
+                     communities[nSpecies_comm == (1 + nSpecies_comm[i]) & isDescendant(communities[i], communities)],
                      sep = ' / '))
   }
-  
   edges <- data.frame(edge = edges,
                       covered = FALSE)
   
-  # check which edges are covered by each constraint; if a constraint covers only edges that are already covered, tag it as redundant
   redundant_constraints <- NULL
   for (i in 1:nrow(constraints)) {
     
+    # each constraint covers 4 communities
+    c1 <- constraints[i, 1]
+    c2 <- orderName(paste(c(strsplit(constraints[i, 1], split = ',')[[1]], constraints[i, 2]), collapse = ','))
+    c3 <- orderName(paste(c(strsplit(constraints[i, 1], split = ',')[[1]], constraints[i, 3]), collapse = ','))
+    c4 <- orderName(paste(c(strsplit(constraints[i, 1], split = ',')[[1]], constraints[i, 2], constraints[i, 3]), collapse = ','))
+    
     # each constraint covers 4 edges
-    edges_i <- c(paste(constraints[i, 1],
-                       orderNames(paste(constraints[i, 1], constraints[i, 2], sep = ',')),
-                       sep = ' / '),
-                 paste(constraints[i, 1],
-                       orderNames(paste(constraints[i, 1], constraints[i, 3], sep = ',')),
-                       sep = ' / '),
-                 paste(orderNames(paste(constraints[i, 1], constraints[i, 2], sep = ',')),
-                       orderNames(paste(constraints[i, 1], constraints[i, 2], constraints[i, 3], sep = ',')),
-                       sep = ' / '),
-                 paste(orderNames(paste(constraints[i, 1], constraints[i, 3], sep = ',')),
-                       orderNames(paste(constraints[i, 1], constraints[i, 2], constraints[i, 3], sep = ',')),
-                       sep = ' / '))
+    edges_i <- c(paste(c1, c2, sep = ' / '),
+                 paste(c1, c3, sep = ' / '),
+                 paste(c2, c4, sep = ' / '),
+                 paste(c3, c4, sep = ' / '))
     
     # which of those are already covered?
     covered_i <- edges$covered[edges$edge %in% edges_i]
     
-    # if they are all covered, tag the i-th constraint as redundant
-    if (all(covered_i)) {
+    if (all(covered_i)) { # if they are all covered, tag the i-th constraint as redundant
       redundant_constraints <- c(redundant_constraints, i)
     } else { # if they are not all covered, keep the constraint and set them all to covered
       edges$covered[edges$edge %in% edges_i] <- TRUE
@@ -329,14 +518,14 @@ inferEps <- function(ge_data) {
     
   }
   
-  # get rid of redundant constraints
+  # remove redundant constraints
   constraints <- constraints[-redundant_constraints, ]
   
   # formulate each constraint in matrix form
   M <- matrix(0, nrow = nrow(constraints), ncol = nrow(eps))
-  c <- matrix(0, nrow = nrow(constraints), ncol = 1)
+  C <- matrix(0, nrow = nrow(constraints), ncol = 1)
   rownames(M) <- paste('C.', 1:nrow(constraints), sep = '')
-  rownames(c) <- rownames(M)
+  rownames(C) <- rownames(M)
   colnames(M) <- rownames(eps)
   
   for (k in 1:nrow(M)) {
@@ -345,8 +534,8 @@ inferEps <- function(ge_data) {
     j <- constraints$j[k]
     B <- constraints$B[k]
     
-    Bi <- orderNames(paste(B, i, sep = ','))
-    Bj <- orderNames(paste(B, j, sep = ','))
+    Bi <- orderName(paste(c(strsplit(B, split = ',')[[1]], i), collapse = ','))
+    Bj <- orderName(paste(c(strsplit(B, split = ',')[[1]], j), collapse = ','))
     
     a_i <- fits[i, 'a']
     b_i <- fits[i, 'b']
@@ -363,290 +552,110 @@ inferEps <- function(ge_data) {
     M[k, e_j_Bi] <- 1
     M[k, e_i_Bj] <- -1
     
-    c[k] <- a_j*b_i - a_i*b_j
+    C[k] <- a_j*b_i - a_i*b_j
     
   }
   
   # check if any constraint is automatically satisfied by the known epsilons
-  check <- M %*% eps - c
+  check <- M %*% eps - C
   check <- sapply(1:nrow(check), FUN = function(i) check[i] < 1e-5) # tolerance: 1e-5 (elements won't be exactly 0 even when the constraint is satisfied due to floating-point precision)
   
-  stopifnot(all(check[!is.na(check)] == TRUE)) # all checks should either be TRUE (constraint satisfied) or NA (constraint not evaluated due to missing epsilons), if this is not the case return a warning
+  stopifnot(all(check[!is.na(check)] == TRUE)) # all checks should either be TRUE (constraint satisfied) or NA (constraint not evaluated due to missing epsilons), if this is not the case something has failed
   
-  # leave only unknown epsilons as incognitas
+  # the dimension of M can be further reduced by moving the known epsilons to the right-hand side of the equation M %*% eps = C
   eps_1 <- eps
   eps_1[!is.na(eps)] <- 0
   eps_2 <- eps
-  eps_2[is.na(eps_2)] <- 0 # eps = eps_1 + eps_2 ---> M %*% eps_1 = c - M %*% eps_2
+  eps_2[is.na(eps_2)] <- 0 # eps = eps_1 + eps_2 ---> M %*% eps_1 = C - M %*% eps_2
   
-  c_prime <- c - (M %*% eps_2) # this makes it so the equation to solve is M %*% eps_1 = c_prime
+  C_prime <- C - (M %*% eps_2) # this makes it so the equation to solve is M %*% eps_1 = C_prime
   remove_these <- sapply(1:nrow(M), FUN = function(i) all(as.numeric(M[i, ]) == rep(0, ncol(M)))) # to remove constraints that are automatically satisfied by the known epsilons
-  c_prime <- c_prime[!remove_these, ]
-  M <- M[!remove_these, 1:sum(is.na(eps))] # alos removes the columns corresponding to known epsilons
+  C_prime <- C_prime[!remove_these, ]
+  M <- M[!remove_these, 1:sum(is.na(eps))] # also removes the columns corresponding to known epsilons
   
-  # rewrite problem in terms of epsilon_sigma and M_sigma
+  # scale elements of M by the sigmas
   M_sigma <- M * matrix(rep(sigma[gsub('.*\\+' ,'', colnames(M))], nrow(M)), nrow = nrow(M), byrow = TRUE)
   
-  # now we just need to solve the system of linear equations sigma_M %*% eps_sigma = c_prime where the elements of eps_sigma are the incognitas
-  # FIXME: what is the dimension of M? after removing redundant constraints? how do we remove redundant constraints in practice? otherwise computation time might explode for large systems
+  # now we just need to solve the system of linear equations M_sigma %*% eps_sigma = C_prime where the elements of eps_sigma are the incognitas
   # use the pseudoinverse for the solution that minimizes sum of squares of the elements of eps_sigma
   M_sigma_pseudoinv <- ginv(M_sigma)
-  eps_sigma_0 <- M_sigma_pseudoinv %*% c_prime
+  eps_sigma_0 <- M_sigma_pseudoinv %*% C_prime
   rownames(eps_sigma_0) <- colnames(M)
   
   # undo the sigma transformation to recover the epsilons
-  eps <- eps_sigma_0 * sigma[gsub('.*\\+' ,'', rownames(eps_sigma_0))]
+  eps_1 <- eps_sigma_0 * sigma[gsub('.*\\+' ,'', rownames(eps_sigma_0))]
   
   # add these values to the matrix of epsilons
-  for (i in 1:nrow(eps)) {
-    eps_matrix[gsub('\\+.*', '', rownames(eps)[i]),
-               gsub('.*\\+', '', rownames(eps)[i])] <- eps[i]
+  for (i in 1:nrow(eps_1)) {
+    B <- gsub('\\+.*', '', rownames(eps)[i])
+    if (B == '') B <- '<empty>'
+    knockin <- gsub('.*\\+', '', rownames(eps)[i])
+    eps_matrix[B, knockin] <- eps_1[i]
   }
   
   # return matrix of epsilons
   return(eps_matrix)
-  
+
 }
 
-predictF <- function(genot, data, coeff, eps) {
+predictF_fullClosure <- function(target, data, eps) {
+
+  # predict the function of a community (target) starting from the function of an in-sample community
+  # assuming that the closure condition is satisfied in the WHOLE landscape
+  # therefore prediction should be independent from the path chosen (i.e. the source community and the order of species addition/removal)
   
-  # genot: the name(s) of the genotype(s) to predict, e.g. c('i,j,k', 'l,m')
-  # single.mut: a data.frame containing the names (first column) and fitness (second column) of the single mutants
-  # coeff: a data.frame of coefficients for the linear fits (obtained from makeGEfits)
-  # eps: a matrix of epsilons (inferred from inferEps)
+  # format data just in case
+  colnames(data) <- c('community', 'fun')
+  data$community <- orderName(data$community)
+  target <- orderName(target)
   
-  data[, 1] <- orderNames(data[, 1])
-  genot <- orderNames(genot)
+  # fit FEEs
+  ge_data <- makeGEdata(data)
+  fits <- makeFEEs(ge_data)
   
-  # aux. function: get the mutational path between two genotypes: what mutations are needed to reach genot_2 from genot_1?
-  mutPath <- function(genot_1, genot_2) {
-    
-    genot_1 <- strsplit(genot_1, split = ',')[[1]]
-    genot_2 <- strsplit(genot_2, split = ',')[[1]]
-    
-    lose_these <- genot_1[!(genot_1 %in% genot_2)]
-    gain_these <- genot_2[!(genot_2 %in% genot_1)]
-    
-    return(list(path_length = length(gain_these) + length(lose_these),
-                lose_these = lose_these,
-                gain_these = gain_these))
-    
-  }
-  
-  predicted_f <- sapply(genot,
-                        FUN = function(genot_i) {
+  # iterate over target (multiple target communities can be passed at once)
+  predicted_f <- sapply(target,
+                        FUN =  function(t) {
                           
-                          if(genot_i %in% data[, 1]) {
-                            
-                            return(data[data[, 1] == genot_i, 2])
-                            
-                          } else {
+                          # get closest path to target community (although any path should be equivalent if the closure condition is satisfied globally)
+                          path <- closestPaths(t, data$community)
+                          steps <- pathSteps(t, path$source[1], single.traj = T)
+                          steps$backgrounds[steps$backgrounds == ''] <- '<empty>'
                           
-                            # identify closest genotypes in dataset
-                            path_lengths <- sapply(data[, 1], FUN = function(x) mutPath(x, genot_i)$path_length)
-                            closest_genots <- names(path_lengths)[path_lengths == min(path_lengths)]
-                            
-                            # how many unknown epsilons are needed to reach genot_i from each of the closest_genots?
-                            best_paths <- vector(mode = 'list', length = length(closest_genots))
-                            names(best_paths) <- closest_genots
-                            
-                            for (i in 1:length(closest_genots)) {
-                              
-                              path <- mutPath(closest_genots[i], genot_i)
-                              all_paths <- permutations(path$path_length, path$path_length,
-                                                        v = c(path$lose_these, path$gain_these))
-                              
-                              n_eps <- rep(0, nrow(all_paths))
-                              
-                              for (j in 1:nrow(all_paths)) {
-                                
-                                this_step <- closest_genots[i]
-                                
-                                for (step in 1:path$path_length) {
-                                  
-                                  next_step <- this_step
-                                  if (all_paths[j, step] %in% path$lose_these) {
-                                    next_step <- strsplit(next_step, split = ',')[[1]]
-                                    next_step <- next_step[next_step != all_paths[j, step]]
-                                    next_step <- paste(next_step, collapse = ',')
-                                  } else if (all_paths[j, step] %in% path$gain_these) {
-                                    next_step <- orderNames(paste(next_step, all_paths[j, step], collapse = ','))
-                                  }
-                                  
-                                  is_eps_known <- this_step %in% data[, 1] & next_step %in% data[, 1]
-                                  n_eps[j] <- n_eps[j] + !is_eps_known
-                                  
-                                  this_step <- next_step
-                                  
-                                }
-                                
-                              }
-                              
-                              # get order with least number of unknown epsilons required (if there is a tie, take the first one)
-                              path$n_eps <- min(n_eps)
-                              path$order <- all_paths[which(n_eps == min(n_eps))[1], ]
-                              
-                              best_paths[[i]] <- path
-                              
-                            }
-                            
-                            ### FIXME: can we generalize this?
-                            # discard paths that involve passing through the wild-type genotype (no mutations)
-                            # currently we are not considering the epsilons of the form eps_i_B where B is the 'empty' background
-                            discard_these <- sapply(1:length(best_paths),
-                                                    FUN = function(p) {
-                                                      
-                                                      path_i <- names(best_paths)[p]
-                                                      
-                                                      for (i in 1:best_paths[[p]]$path_length) {
-                                                        
-                                                        path_next <- path_i[length(path_i)]
-                                                        
-                                                        if (best_paths[[p]]$order[i] %in% best_paths[[p]]$gain_these) {
-                                                          path_next <- paste(path_next, best_paths[[p]]$order[i], sep = ',')
-                                                        } else if (best_paths[[p]]$order[i] %in% best_paths[[p]]$lose_these) {
-                                                          path_next <- strsplit(path_next, split = ',')[[1]]
-                                                          path_next <- path_next[!(path_next == best_paths[[p]]$order[i])]
-                                                          path_next <- paste(path_next, collapse = ',')
-                                                        }
-                                                        
-                                                        path_i <- c(path_i, path_next)
-                                                        
-                                                      }
-                                                      
-                                                      return(any(path_i == ''))
-                                                      
-                                                    })
-                            
-                            best_paths[which(discard_these)] <- NULL
-                            closest_genots <- closest_genots[!discard_these]
-                            
-                            # which path involves the least amount of unknown epsilons? (if there is a tie, take the first one)
-                            which_best_path <- which.min(sapply(best_paths, FUN = function(x) x$n_eps))[1]
-                            best_path <- best_paths[[which_best_path]]
-                            best_path$source <- closest_genots[which_best_path]
-                            
-                            # follow the best path to predict function
-                            fun <- data[data[, 1] == best_path$source, 2]
-                            B <- best_path$source
-                            
-                            for (step in 1:best_path$path_length) {
-                              
-                              i <- best_path$order[step]
-                              
-                              if (best_path$order[step] %in% best_path$gain_these) {
-                                
-                                d_fun <- coeff[i, 'a'] + coeff[i, 'b']*fun + eps[B, i]
-                                fun <- fun + d_fun
-                                
-                                B <- orderNames(paste(B, i, sep = ','))
-                                
-                              } else if (best_path$order[step] %in% best_path$lose_these) {
-                                
-                                B <- strsplit(B, split = ',')[[1]]
-                                B <- paste(B[B != i], collapse = ',')
-                                
-                                d_fun <- coeff[i, 'a'] + coeff[i, 'b']*fun + eps[B, i]
-                                fun <- fun - d_fun
-                                
-                              }
-                              
-                            }
-                            
-                            return(fun)
-                          
+                          # iterate
+                          comm <- steps$trajectory[1]
+                          fun <- mean(data$fun[data$community == comm])
+                          for (s in 1:length(steps$knock_ins)) {
+                            comm <- steps$trajectory[s]
+                            fun <- fun + steps$signs[s]*(fits[steps$knock_ins[s], 'a'] + fits[steps$knock_ins[s], 'b']*fun + eps[steps$backgrounds[s], steps$knock_ins[s]])
                           }
+                          
+                          return(fun)
                           
                         })
   
-  return(predicted_f)
+  return(data.frame(community = names(predicted_f),
+                    fun = as.numeric(predicted_f)))
   
 }
 
-
-
-
-### ----------------------------------------------------------------------------
-
 if (F) {
+  
+### LOAD DATA FOR TESTING
+data <- read.table('../pyoverdine_data/pyo_rep3.txt', header = T)
+data <- rbind(data, data.frame(community = '', fun = 0))
 
+target <- sample(data$community, size = 30)
+obsF <- data[data$community %in% target, ]
+data <- data[!(data$community %in% target), ]
 
-### RUN PIPELINE
+ge_data <- makeGEdata(data)
+eps <- inferAllResiduals(ge_data)
 
-# load data
-data_full <- read.table('../jack/data/ge_pyoverdine.txt', header = T, sep = '\t')
-data_full[, 1] <- orderNames(data_full[, 1])
+predF <- predictF_fullClosure(target, data, eps)
+po <- merge(obsF, predF, by = 'community', suffixes = c('.obs', '.pred'))
 
-# aggregate replicate communities if necessary (makeGEdata does this automatically but it's better to do it before hand for subsampling)
-data_full <- aggregate(formula = fun ~ community,
-                       data = data_full,
-                       FUN = mean)
-
-# GE formatted data
-ge_data_full <- makeGEdata(data_full)
-
-# fetch mutation names and build full combinatorial space
-muts <- unique(ge_data_full$knock_in)
-genots <- orderNames(unlist(sapply(1:length(muts),
-                                   FUN = function(i) sapply(combn(muts,
-                                                                  i,
-                                                                  simplify = FALSE),
-                                                            FUN = paste, collapse = ','))))
-
-# predict entire landscape
-fits <- makeGEfits(ge_data_full)
-eps <- inferEps(ge_data_full)
-predicted_f <- predictF(genots,
-                        data_full,
-                        fits,
-                        eps)
-
-# partial observations
-observed_f <- setNames(data_full$fun, data_full$community)
-observed_f <- observed_f[genots]
-po <- data.frame(comunity = genots,
-                 predicted_f = predicted_f,
-                 observed_f = observed_f)
-po <- po[order(po$predicted_f, decreasing = TRUE), ]
-po$predicted_rank <- 1:nrow(po)
-
-# subsample data (make sure that monoculture data is left in the sample)
-leave_out_of_sample <- sample(data_full$community, size = round(0.2*nrow(data_full)), replace = FALSE)
-leave_out_of_sample <- leave_out_of_sample[nMut(leave_out_of_sample) > 1]
-
-data <- data_full[!(data_full$community %in% leave_out_of_sample), ] # subsample data
-
-# pipeline
-geplot <- plotGE(data)
-fits <- makeGEfits(data)
-eps <- inferEps(data)
-predicted_f <- predictF(leave_out_of_sample,
-                        data,
-                        fits,
-                        eps)
-observed_f <- data_full[data_full$community %in% leave_out_of_sample, ]
-
-pred_obs_f <- merge(observed_f,
-                    data.frame(community = leave_out_of_sample,
-                               fun = predicted_f),
-                    by = 'community',
-                    suffixes = c('_obs', '_pred'))
-
-ggplot(pred_obs_f, aes(x = fun_pred, y = fun_obs)) +
-  geom_abline(slope = 1, 
-              intercept = 0,
-              linetype = 'dashed') +
-  geom_point() +
-  geom_smooth(method = 'lm',
-              se = FALSE,
-              formula = y~x,
-              color = 'black') +
-  scale_x_continuous(name = 'Predicted F') +
-  scale_y_continuous(name = 'Observed F') +
-  theme_bw() +
-  theme(aspect.ratio = 1,
-        panel.grid = element_blank())
-
-print(cor(pred_obs_f$fun_obs, pred_obs_f$fun_pred)^2)
+plot(po$fun.pred, po$fun.obs)
+abline(a = 0, b = 1)
 
 }

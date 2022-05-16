@@ -1,26 +1,21 @@
 rm(list = ls())
 
 ### LIBRARIES
-
-require(testthat)
+run_tests <- FALSE # set to TRUE to run tests in every execution
+if (run_tests) require(testthat)
 require(MASS)
 require(ggplot2)
 require(gtools)
-require(scales)
-require(gridExtra)
-require(tidyverse)
-require(combinat)
 
-run_tests <- FALSE # set to TRUE to run tests in every execution
 
 ### FUNCTIONS & TESTS
 
-orderName <- function(community) {
+orderNames <- function(communities) {
   
   # order community names with the form 'sp2,sp2,sp3,...' so that species consistently
   # appear in alphabetical order
   
-  as.character(sapply(community,
+  as.character(sapply(communities,
                       FUN = function(s) paste(sort(strsplit(s, split = ',')[[1]]),
                                               collapse = ',')))
 }
@@ -52,7 +47,7 @@ matrix2string <- function(data) {
   
   communities <- sapply(1:nrow(data),
                         FUN = function(i) paste(species[data[i, -ncol(data)] == 1], collapse = ','))
-  communities <- orderName(communities)
+  communities <- orderNames(communities)
   
   return(data.frame(community = communities,
                     fun = data[, ncol(data)]))
@@ -61,282 +56,13 @@ matrix2string <- function(data) {
 
 if (run_tests) {
   test_that('Name ordering',{
-    expect_equal(orderName('1,3,2'), '1,2,3')
-    expect_equal(orderName(c('B,C,A,F,D', 'y,x,z')), c('A,B,C,D,F', 'x,y,z'))
+    expect_equal(orderNames('1,3,2'), '1,2,3')
+    expect_equal(orderNames(c('B,C,A,F,D', 'y,x,z')), c('A,B,C,D,F', 'x,y,z'))
   })
 }
 
-nSpecies <- function(community) {
-  
-  # returns the number of species in a community (given in 'sp1,sp2,sp3,...' format)
-  # returns 0 if input is NA
-  
-  as.numeric(sapply(community,
-                    FUN = function(comm) {
-                      if (is.na(comm)) return(0)
-                      else return(length(strsplit(comm, split = ',')[[1]]))
-                    }))
-  
-}
-
-containsSpecies <- function(species, community) {
-  
-  # returns TRUE if species is present in community, FALSE otherwise
-  
-  return(sapply(community,
-                FUN = function(comm) species %in% strsplit(comm, split = ',')[[1]]))
-  
-}
-
-makeGEdata <- function(data) {
-  
-  # takes a mapping between community structures and functions and returns a data frame of species functional effects
-  # input data must be a data frame where he first column corresponds to genotype names and the second column corresponds to genotype fitness
-  # genotype names should be such that present mutations appear separated by commas with no spaces, e.g. 'sp1,sp2,sp3,...'
-  # use matrix2string() function to convert data to this format if needed
-  
-  # name columns of data
-  colnames(data) <- c('community', 'f')
-  
-  # order community names alphabetically
-  data[, 1] <- orderName(data[, 1])
-  
-  # if there are multiple instances of a same genotype, take the average and print a warning
-  if(!all(table(data[, 1]) == 1)) {
-    warning(paste('Multiple instances of a same combination in input data set:\n',
-                  paste(names(table(data[, 1]))[table(data[, 1]) > 1], collapse = '\n'),
-                  '\nAveraging F to proceed.', sep = ''))
-    data <- aggregate(formula = f ~ community,
-                      data = data,
-                      FUN = mean)
-  }
-  
-  # extract species names
-  species <- sort(unique(unlist(strsplit(data[, 1], split = ','))))
-  n_species <- length(species)
-  
-  # functions as named array
-  f <- setNames(data[, 2], data[, 1])
-  
-  # output: data frame where the effect of each species on a background community is isolated
-  ge_data <- do.call(rbind,
-                     lapply(species,
-                            FUN = function(sp) {
-                              
-                              # fetch all communities in sample that contain species sp
-                              knockins <- data$community[containsSpecies(sp, data$community)]
-                              
-                              # backgrounds corresponding to those communities
-                              backgrounds <- as.character(sapply(knockins,
-                                                                 FUN = function(x) {
-                                                                   x <- strsplit(x, split = ',')[[1]]
-                                                                   x <- x[x != sp]
-                                                                   x <- paste(x, collapse = ',')
-                                                                   return(x)
-                                                                 }))
-                              
-                              # functions of backrounds and backgrounds + knock-ins
-                              f_knockins <- as.numeric(f[knockins])
-                              f_backgrounds <- as.numeric(f[backgrounds])
-                              
-                              # build data frame
-                              df <- data.frame(background = backgrounds,
-                                               knock_in = sp,
-                                               background_f = f_backgrounds,
-                                               d_f = f_knockins - f_backgrounds)
-                              
-                              # keep only rows where the function of both the background and the knockin are known
-                              df <- df[!is.na(df$background_f) & !is.na(df$d_f), ]
-                              
-                              rownames(df) <- NULL
-                              
-                              return(df)
-                              
-                            }))
-  
-  return(ge_data)
-  
-}
-
-plotFEEs <- function(ge_data) {
-  
-  # make dF-vs-F plots
-  
-  p <-
-    ggplot(ge_data, aes(x = background_f, y = d_f)) +
-      geom_abline(slope = 0,
-                  intercept = 0,
-                  color = '#d1d3d4') +
-      geom_point(shape = 1,
-                 cex = 2) +
-      geom_smooth(method = 'lm',
-                  formula = y~x,
-                  color = 'firebrick1',
-                  se = F,
-                  fullrange = T) +
-      scale_x_continuous(breaks = pretty_breaks(n = 3),
-                         name = 'Function of ecological background [a.u.]') +
-      scale_y_continuous(breaks = pretty_breaks(n = 3),
-                         name = 'dF [a.u.]') +
-      facet_wrap(~knock_in) +
-      theme_bw() +
-      theme(panel.grid = element_blank(),
-            strip.background = element_blank(),
-            strip.text = element_text(face = 'italic',
-                                      size = 10),
-            aspect.ratio = 0.6,
-            axis.text = element_text(size = 16),
-            axis.title = element_text(size = 18),
-            panel.border = element_blank(),
-            panel.background = element_blank(),
-            legend.position = 'none') +
-      annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
-      annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
-  
-  print(p)
-  
-  return(p)
-  
-}
-
-closestPaths <- function(target_comm, comm_list) {
-  
-  # given a focal community (comm) and a list of other communities (comm_list), returns those in comm_list that are closest to comm (in terms of species addition/removal)
-  
-  all_comms <- data.frame(community = c(target_comm, comm_list),
-                          fun = NA)
-  all_comms <- string2matrix(all_comms)
-  
-  comm <- all_comms[1, 1:(ncol(all_comms) - 1)]
-  comm_list <- all_comms[2:nrow(all_comms), 1:(ncol(all_comms) - 1)]
-  
-  dist <- sapply(1:nrow(comm_list),
-                 FUN = function(i) sum(abs(comm_list[i, ] - comm)))
-  
-  which_min <- which(dist == min(dist))
-  closest_comms <- comm_list[which_min, ]
-  
-  if (length(which_min) == 1) {
-    closest_comms <- matrix(closest_comms, nrow = 1)
-    colnames(closest_comms) <- names(comm)
-  }
-  
-  # paths to comm
-  paths <- lapply(1:nrow(closest_comms),
-                  FUN = function(i) comm - closest_comms[i, ])
-  paths <- do.call(rbind, paths)
-  
-  sources <- matrix2string(cbind(as.data.frame(closest_comms), fun = NA))$community
-  
-  # return info
-  return(cbind(source = sources, target = target_comm, dist = dist[which_min], as.data.frame(paths)))
-  
-}
-
-fetchResiduals <- function(paths) {
-  
-  # fetch which residuals (epsilons) take part in a given set of paths (from a source to a target community)
-  # accounts for every possible path order (e.g. i->j->k, j->i->k, k->i->j, ...)
-  # variable naming: eps_i(s) is named s+i (e.g. 'i,j+k', 'i,k+j', 'i,j,k+l', ...)
-  
-  eps <- NULL
-  
-  for (p in 1:nrow(paths)) {
-    
-    traj <- paths[p, 4:ncol(paths)]
-    traj <- colnames(traj)[abs(traj[1, ]) == 1]
-    traj <- do.call(rbind, permn(traj))
-    
-    eps <- c(eps,
-             unlist(lapply(1:nrow(traj), FUN = function(t) {
-               
-               traj_i <- traj[t, ]
-               cumtraj_i <- orderName(sapply(1:length(traj_i), FUN = function(i) paste(traj_i[1:i], collapse = ',')))
-               cumtraj_i <- c(paths$source[p],
-                              orderName(paste(paths$source[p], cumtraj_i, sep = ',')))
-               eps_i <- paste(cumtraj_i[-length(cumtraj_i)], traj_i, sep = '+')
-               
-               return(eps_i)
-               
-             })))
-    
-  }
-  
-  return(eps)
-  
-}
-
-
-
-
-### LOAD DATA FOR TESTING
-data <- read.table('../pyoverdine_data/pyo_rep3.txt', header = T)
-data <- rbind(data, data.frame(community = '', fun = 0))
-
-ge_data <- makeGEdata(data)
-
-
-set.seed(0)
-target_comm <- data$community[100]
-data <- data[-100, ]
-data <- data[sample(1:nrow(data), size = 10), ]
-
-paths <- closestPaths(target_comm, data$community)
-paths2 <- paths
-paths2$source <- '1,8'
-paths2[, 4:11] <- c(0, 1, 1, 0, 0, 0, 0, 0)
-paths <- rbind(paths, paths2)
-rm(paths2)
-
-fetchResiduals(paths)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-if(F) {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# get number of mutations of a given genotype/array of genotype names (return 0 if input genotype is NA)
 nMut <- function(genotypes) {
-  
   as.numeric(sapply(genotypes,
                     FUN = function(genotype) {
                       if (is.na(genotype)) return(0)
@@ -351,17 +77,6 @@ if (run_tests) {
     expect_equal(nMut(NA), 0)
   })
 }
-
-
-
-
-
-
-
-
-
-
-
 
 # format data: from an (incomplete) genotype-to-fitness map to 'species fitness effects' data
 makeGEdata <- function(data, exclude.single.mut = FALSE, baseline.fun = 0) {
@@ -933,9 +648,5 @@ ggplot(pred_obs_f, aes(x = fun_pred, y = fun_obs)) +
         panel.grid = element_blank())
 
 print(cor(pred_obs_f$fun_obs, pred_obs_f$fun_pred)^2)
-
-}
-
-
 
 }
