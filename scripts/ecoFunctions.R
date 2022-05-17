@@ -164,7 +164,7 @@ makeGEdata <- function(data) {
                               
                               # build data frame
                               df <- data.frame(background = fun$community,
-                                               knock_in = sp,
+                                               knock_in = rep(sp, nrow(fun)),
                                                background_f = fun$fun.backgrund,
                                                d_f = fun$df)
                               
