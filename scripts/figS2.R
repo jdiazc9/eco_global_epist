@@ -7,15 +7,12 @@ library(gridExtra)
 library(tidyverse)
 library(cowplot)
 
-# set seed for reproducibility
-set.seed(1)
-
 # load data sets
 files <- list.files('../data_sets', full.names = T)
 data <- lapply(files, FUN = function(file) read.csv(file))
 
 # wrapper function: leave part of the data as out_of_sample, fit FEEs with the remaining data, use method to predict function and compare to observed function
-pred_vs_obs <- function(data, f_out_of_sample = 0.2) {
+pred_vs_obs <- function(data, f_out_of_sample = 0.2, mode = 'full_closure') {
   
   # average replicates
   data <- matrix2string(data)
@@ -49,30 +46,50 @@ pred_vs_obs <- function(data, f_out_of_sample = 0.2) {
     
   } else {
     
-    eps <- inferAllResiduals(ge_data)
+    if (mode == 'full_closure') {
     
-    # use method to predict the function of the out of sample communities
-    predicted_f <- predictF_fullClosure(out_of_sample$community,
-                                        data,
-                                        eps)
+      eps <- inferAllResiduals(ge_data)
+      
+      # use 'fullClosure' (global inference of epsilons) method to predict the function of the out of sample communities
+      predicted_f <- predictF_fullClosure(out_of_sample$community,
+                                          data,
+                                          eps)
+      
+      pred_obs <- merge(out_of_sample, predicted_f, by = 'community', suffixes = c('_obs', '_pred'))
+      
+      r_squared <- cor(pred_obs$fun_obs, pred_obs$fun_pred)^2
+      
+      return(list(df = pred_obs,
+                  r_squared = r_squared))
     
-    pred_obs <- merge(out_of_sample, predicted_f, by = 'community', suffixes = c('_obs', '_pred'))
-    
-    r_squared <- cor(pred_obs$fun_obs, pred_obs$fun_pred)^2
-    
-    return(list(df = pred_obs,
-                r_squared = r_squared))
+    } else if (mode == 'base') {
+      
+      # use base method (eps = 0) to predict the function of the out of sample communities
+      predicted_f <- predictF_base(out_of_sample$community,
+                                   data)
+      
+      pred_obs <- merge(out_of_sample, predicted_f, by = 'community', suffixes = c('_obs', '_pred'))
+      
+      r_squared <- cor(pred_obs$fun_obs, pred_obs$fun_pred)^2
+      
+      return(list(df = pred_obs,
+                  r_squared = r_squared))
+      
+    }
     
   }
   
 }
 
-i <- 4 #for (i in 1:5) {
+mode <- rep('full_closure', length(files))
+mode[grepl('Clark', files)] <- 'base' # for the Clark et al. data, global inference is computationally out of reach
+
+for (i in 1:5) {
   
   # for the phytoplankton biomass dataset (Ghedini et al., scale functions by 1e-4 for easier readability)
   if (i == 3) data[[i]][, ncol(data[[i]])] <- data[[i]][, ncol(data[[i]])]/1e4
   
-  # get predicted vs observed plots and r_squared (repeat 50 times for every data set)
+  # get predicted vs observed plots and r_squared (repeat 500 times for every data set)
   po <- data.frame(run = numeric(0),
                    community = character(0),
                    fun_obs = numeric(0),
@@ -81,14 +98,14 @@ i <- 4 #for (i in 1:5) {
   
   for (n in 1:500) {
     print(c(i, n))
-    po_i <- pred_vs_obs(data[[i]])
+    po_i <- pred_vs_obs(data[[i]], mode = mode[[i]])
     
     po <- rbind(po, cbind(data.frame(run = rep(n, nrow(po_i$df))),
                           po_i$df))
     r_squared <- c(r_squared, po_i$r_squared)
   }
   
-  po_i <- po[po$run == unique(po$run)[which.min(abs(r_squared - 0.75))], ]
+  po_i <- po_i$df
   range <- c(min(c(po_i$fun_obs, po_i$fun_pred)),
              max(c(po_i$fun_obs, po_i$fun_pred)))
   
@@ -163,6 +180,6 @@ i <- 4 #for (i in 1:5) {
          units = 'mm',
          limitsize = F)
   
-#}
+}
 
 

@@ -1,5 +1,3 @@
-rm(list = ls())
-
 ### LIBRARIES
 
 require(testthat)
@@ -334,10 +332,28 @@ pathSteps <- function(target, source, single.traj = F) {
   
   traj <- path[1, 4:ncol(path), drop = F]
   traj <- colnames(traj)[abs(traj[1, ]) == 1]
+  
+  # should a single trajectory be returned? (this is enough if the closer condition is satisfied)
   if (single.traj) {
+    
     traj <- matrix(traj, nrow = 1)
-  } else {
-    traj <- do.call(rbind, permn(traj))
+    
+  } else { # otherwise, return all possible trajectories (orders of species addition)
+    
+    if (length(traj) <= 4) {
+      
+      traj <- do.call(rbind, permn(traj))
+      
+    } else {
+      
+      # if number of steps is too large, getting all possible trajectories is computationally out of reach
+      # in that case, we take only 25 arbitrarily chosen paths
+      traj <- do.call(rbind,
+                      lapply(1:25,
+                             FUN = function(i) matrix(sample(traj, size = length(traj), replace = F), nrow = 1)))
+      
+    }
+    
   }
   
   traj_steps <- lapply(1:nrow(traj),
@@ -629,6 +645,10 @@ predictF_base <- function(target, data) {
                   
                   paths <- closestPaths(t, data$community)
                   
+                  # if there are too many possible paths from an in-sample community to the target community,
+                  # we randomly choose 5 of them to avoid heavily increasing computation time
+                  if (nrow(paths) > 5) paths <- paths[order(sample(1:nrow(paths), size = 5, replace = F)), ]
+                  
                   fun <- lapply(1:nrow(paths),
                                 FUN = function(i) {
                                   
@@ -707,7 +727,7 @@ predictF_fullClosure <- function(target, data, eps) {
   
 }
 
-if (T) {
+if (F) {
   
   ### LOAD DATA FOR TESTING
   data <- read.table('../pyoverdine_data/pyo_rep3.txt', header = T)
