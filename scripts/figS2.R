@@ -67,7 +67,7 @@ pred_vs_obs <- function(data, f_out_of_sample = 0.2) {
   
 }
 
-i <- 3 #for (i in 1:5) {
+i <- 4 #for (i in 1:5) {
   
   # for the phytoplankton biomass dataset (Ghedini et al., scale functions by 1e-4 for easier readability)
   if (i == 3) data[[i]][, ncol(data[[i]])] <- data[[i]][, ncol(data[[i]])]/1e4

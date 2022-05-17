@@ -219,15 +219,30 @@ plotFEEs <- function(ge_data) {
   
 }
 
-closestPaths <- function(target_comm, comm_list) {
+closestPaths <- function(target_comm, comm_list, species.removal = F) {
   
-  # given a focal community (comm) and a list of other communities (comm_list), returns those in comm_list that are closest to comm (in terms of species addition/removal)
+  # given a focal community (comm) and a list of other communities (comm_list), returns those in comm_list that are closest to comm (in terms of species addition)
   
+  # fetch communities that are potential ancestors of the target
+  isAncestor <- function(community_1, community_2) { # check if community_1 is an ancestor of community_2 (i.e. all species in community_1 are also in community_2)
+    sapply(community_1,
+           FUN = function(x) all(strsplit(x, split = ',')[[1]] %in% strsplit(community_2, split = ',')[[1]]))
+  }
+  if (!species.removal) comm_list <- comm_list[isAncestor(comm_list, target_comm)]
+  
+  if (length(comm_list) == 0) {
+    
+    warning(paste('For community\n', target_comm, '\nno ancestors in data. Returning <empty> community.', sep = ''))
+    
+    comm_list <- ''
+    
+  }
+    
   all_comms <- data.frame(community = c(target_comm, comm_list),
                           fun = NA)
   all_comms <- string2matrix(all_comms)
   
-  comm <- all_comms[1, 1:(ncol(all_comms) - 1)]
+  comm <- all_comms[1, 1:(ncol(all_comms) - 1), drop = F]
   comm_list <- all_comms[2:nrow(all_comms), 1:(ncol(all_comms) - 1), drop = F]
   
   dist <- sapply(1:nrow(comm_list),
@@ -235,6 +250,7 @@ closestPaths <- function(target_comm, comm_list) {
   
   which_min <- which(dist == min(dist))
   closest_comms <- comm_list[which_min, , drop = F]
+    
   
   # paths to comm
   paths <- lapply(1:nrow(closest_comms),
@@ -598,37 +614,56 @@ inferAllResiduals <- function(ge_data) {
 
 }
 
-predictF_base <- function(target, data) {}
+predictF_base <- function(target, data) {
 
-# predict the function of a community (target) starting from the function of an in-sample community
-# considers every unknown residual to be zero
-# first obtains the in-sample communities that are closer to the target community, then every possible path (i.e. order of addition/removal of species)
-# final prediction is the average across all paths
+  # predict the function of a community (target) starting from the function of an in-sample community
+  # considers every unknown residual to be zero
+  # first obtains the in-sample communities that are closer to the target community, then every possible path (i.e. order of addition/removal of species)
+  # final prediction is the average across all paths
+  
+  ge_data <- makeGEdata(data)
+  fits <- makeFEEs(ge_data)
+  
+  fun <- sapply(target,
+                FUN = function(t) {
+                  
+                  paths <- closestPaths(t, data$community)
+                  
+                  fun <- lapply(1:nrow(paths),
+                                FUN = function(i) {
+                                  
+                                  path <- paths[i, ]
+                                  steps <- pathSteps(t, path$source[1], single.traj = F)
+                                  
+                                  fun_i <- sapply(steps,
+                                                  FUN = function(st) {
+                                                    
+                                                    st$backgrounds[st$backgrounds == ''] <- '<empty>'
+                                                    
+                                                    # iterate
+                                                    comm <- st$trajectory[1]
+                                                    fun <- mean(data$fun[data$community == comm])
+                                                    for (s in 1:length(st$knock_ins)) {
+                                                      comm <- st$trajectory[s]
+                                                      fun <- fun + st$signs[s]*(fits[st$knock_ins[s], 'a'] + fits[st$knock_ins[s], 'b']*fun)
+                                                    }
+                                                    
+                                                    return(fun)
+                                                    
+                                                  })
+                                  
+                                  return(fun_i)
+                                  
+                                })
+                  
+                  return(mean(unlist(fun)))
+                  
+                })
+  
+  return(data.frame(community = names(fun),
+                    fun = as.numeric(fun)))
 
-### LOAD DATA FOR TESTING
-data <- read.table('../pyoverdine_data/pyo_rep3.txt', header = T)
-data <- rbind(data, data.frame(community = '', fun = 0))
-
-target <- sample(data$community, size = 30)
-obsF <- data[data$community %in% target, ]
-data <- data[!(data$community %in% target), ]
-
-ge_data <- makeGEdata(data)
-
-t <- target[1]
-
-paths <- closestPaths(t, data$community)
-
-i <- 1
-
-path <- paths[i, ]
-steps <- pathSteps(t, path$source[1], single.traj = F)
-
-j <- 1
-
-
-steps[[j]]$backgrounds[steps$backgrounds == ''] <- '<empty>'
-
+}
 
 
 predictF_fullClosure <- function(target, data, eps) {
@@ -672,8 +707,21 @@ predictF_fullClosure <- function(target, data, eps) {
   
 }
 
-if (F) {
+if (T) {
   
-
+  ### LOAD DATA FOR TESTING
+  data <- read.table('../pyoverdine_data/pyo_rep3.txt', header = T)
+  data <- rbind(data, data.frame(community = '', fun = 0))
+  
+  target <- sample(data$community, size = 30)
+  if ('' %in% target) target <- target[target != '']
+  obsF <- data[data$community %in% target, ]
+  data <- data[!(data$community %in% target), ]
+  
+  predF <- predictF_base(target, data)
+  
+  po <- merge(obsF, predF, by = 'community', suffixes = c('_obs', '_pred'))
+  plot(po$fun_pred, po$fun_obs)
+  abline(a = 0, b = 1)
 
 }

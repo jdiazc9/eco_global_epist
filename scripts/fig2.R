@@ -1,7 +1,7 @@
 rm(list = ls())
 
 # load auxiliary functions
-source('./ecoFunctions.R')
+source('./ecoFunctions2.R')
 library(scales)
 library(gridExtra)
 library(tidyverse)
