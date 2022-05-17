@@ -24,7 +24,7 @@ pred_vs_obs <- function(data, f_out_of_sample = 0.2) {
                     FUN = mean)
 
   # leave 20% of data out-of-sample
-  which_out_of_sample <- sample(1:nrow(data), size = round(0.3*nrow(data)))
+  which_out_of_sample <- sample(1:nrow(data), size = round(f_out_of_sample*nrow(data)))
   out_of_sample <- data[which_out_of_sample, ]
   data <- data[-which_out_of_sample, ]
   
@@ -79,7 +79,7 @@ i <- 4 #for (i in 1:5) {
                    fun_pred = numeric(0))
   r_squared <- NULL
   
-  for (n in 1:100) {
+  for (n in 1:500) {
     print(c(i, n))
     po_i <- pred_vs_obs(data[[i]])
     
@@ -155,7 +155,7 @@ i <- 4 #for (i in 1:5) {
   
   print(myplot)
   ggsave(myplot,
-         filename = '../plots/figS2.pdf',
+         filename = paste('../plots/figS2_', i, '.pdf', sep = ''),
          device = 'pdf',
          dpi = 600,
          width = 200,
