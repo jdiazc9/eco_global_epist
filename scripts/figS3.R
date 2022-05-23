@@ -78,7 +78,7 @@ myplot <-
     geom_errorbar(width = 0) +
     geom_line() +
     geom_point(cex = 3) +
-    scale_x_continuous(name = 'Fraction of communities in-sample',
+    scale_x_continuous(name = 'Fraction of communities in sample',
                        breaks = pretty_breaks(n = 4)) +
     scale_y_continuous(name = expression(paste('Predicted vs. observed ',italic(R^2))),
                        limits = c(0, 1),
