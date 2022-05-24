@@ -85,7 +85,7 @@ fits <- data.frame(run = numeric(0),
                    species = character(0),
                    a = numeric(0),
                    b = numeric(0))
-for (i in 1:500) {
+for (i in 1:1) {
   
   print(i)
   
@@ -176,14 +176,14 @@ fits$color <- factor(fits$color, levels = c("Pseudomonas sp. 01",
 myplot <-
   ggplot(fits, aes(x = a, y = b, color = color, alpha = color, size = color)) +
     geom_point(shape = 16) +
-    scale_color_manual(values = c('#8b8131',
-                                  '#ddc85d',
-                                  '#518b3f',
-                                  '#86c65e',
-                                  '#5ea5be',
-                                  '#b199c1',
-                                  '#c25ea4',
-                                  '#662b85',
+    scale_color_manual(values = c("#662b85",
+                                  "#c25ea4",
+                                  "#b199c1",
+                                  "#5ea5be",
+                                  "#86c65e",
+                                  "#518b3f",
+                                  "#ddc85d",
+                                  "#8b8131",
                                   'black'),
                        name = '') +
     scale_alpha_manual(values = c(rep(1, 8), 0.2),
