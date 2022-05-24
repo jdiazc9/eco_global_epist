@@ -8,7 +8,7 @@ library(tidyverse)
 library(cowplot)
 
 # load data sets
-files <- list.files('../pyoverdine_data', full.names = T)
+files <- list.files('../pyoverdine_data', full.names = T, recursive = F, pattern = '.csv')
 data <- lapply(files, FUN = function(file) read.csv(file))
 
 data <- lapply(data,
@@ -17,14 +17,14 @@ data <- do.call(rbind, data)
 data <- matrix2string(data)
 
 # species names
-sp_names <- setNames(c('E. mori',
-                       'P. putida',
-                       'K. grimontii',
-                       'P. fulva',
-                       'P. parafulva',
-                       'R. ornithinolytica',
-                       'P. cremoricolorata',
-                       'P. savastanoi'),
+sp_names <- setNames(c('Enterobacter sp.',
+                       'Pseudomonas sp. 02',
+                       'Klebsiella sp.',
+                       'Pseudomonas sp. 03',
+                       'Pseudomonas sp. 04',
+                       'Raoultella sp.',
+                       'Pseudomonas sp. 01',
+                       'Pseudomonas sp. 05'),
                      paste('sp', 1:8, sep = '_'))
 
 # wrapper function: randomize data, return FEE coefficients for each species and r_sqaured of predicted vs. observed function
@@ -101,14 +101,14 @@ data.rnd <- data.frame(community = data$community,
                        fun = sample(data$fun, size = nrow(data), replace = F))
 ge_data.rnd <- makeGEdata(data.rnd)
 ge_data.rnd$knock_in <- sp_names[ge_data.rnd$knock_in]
-ge_data.rnd$knock_in <- factor(ge_data.rnd$knock_in, levels = c('P. cremoricolorata',
-                                                                'P. putida',
-                                                                'P. fulva',
-                                                                'P. parafulva',
-                                                                'P. savastanoi',
-                                                                'E. mori',
-                                                                'R. ornithinolytica',
-                                                                'K. grimontii'))
+ge_data.rnd$knock_in <- factor(ge_data.rnd$knock_in, levels = c("Pseudomonas sp. 01",
+                                                                "Pseudomonas sp. 02",
+                                                                "Pseudomonas sp. 03",
+                                                                "Pseudomonas sp. 04",
+                                                                "Pseudomonas sp. 05",
+                                                                "Enterobacter sp.",
+                                                                "Raoultella sp.",
+                                                                "Klebsiella sp.")) # ordered from higher to lower function in monoculture
 
 myplot <-
   ggplot(ge_data.rnd, aes(x = background_f, y = d_f)) +
@@ -123,9 +123,9 @@ myplot <-
                 se = F,
                 fullrange = T) +
     scale_x_continuous(breaks = pretty_breaks(n = 3),
-                       name = 'Function of ecological background [a.u.]') +
+                       name = 'Function of ecological background [uM]') +
     scale_y_continuous(breaks = pretty_breaks(n = 3),
-                       name = 'dF [a.u.]') +
+                       name = 'dF [uM]') +
     facet_wrap(~knock_in,
                nrow = 2) +
     theme_bw() +
@@ -163,19 +163,19 @@ fits <- rbind(data.frame(run = 'true',
 fits$color <- fits$species
 fits$color[fits$run != 'true'] <- 'Randomized data'
 fits$color[fits$run == 'true'] <- sp_names[fits$color[fits$run == 'true']]
-fits$color <- factor(fits$color, levels = c('P. cremoricolorata',
-                                            'P. putida',
-                                            'P. fulva',
-                                            'P. parafulva',
-                                            'P. savastanoi',
-                                            'E. mori',
-                                            'R. ornithinolytica',
-                                            'K. grimontii',
-                                            'Randomized data'))
+fits$color <- factor(fits$color, levels = c("Pseudomonas sp. 01",
+                                            "Pseudomonas sp. 02",
+                                            "Pseudomonas sp. 03",
+                                            "Pseudomonas sp. 04",
+                                            "Pseudomonas sp. 05",
+                                            "Enterobacter sp.",
+                                            "Raoultella sp.",
+                                            "Klebsiella sp.",
+                                            "Randomized data"))
 
 myplot <-
   ggplot(fits, aes(x = a, y = b, color = color, alpha = color, size = color)) +
-    geom_point() +
+    geom_point(shape = 16) +
     scale_color_manual(values = c('#8b8131',
                                   '#ddc85d',
                                   '#518b3f',
@@ -186,11 +186,11 @@ myplot <-
                                   '#662b85',
                                   'black'),
                        name = '') +
-    scale_alpha_manual(values = c(rep(1, 8), 0.05),
+    scale_alpha_manual(values = c(rep(1, 8), 0.2),
                        guide = 'none') +
-    scale_size_manual(values = c(rep(3, 8), 1),
+    scale_size_manual(values = c(rep(3, 8), 2),
                       guide = 'none') +
-    scale_x_continuous(name = 'FEE intercept [a.u.]',
+    scale_x_continuous(name = 'FEE intercept [uM]',
                        breaks = pretty_breaks(n = 3)) +
     scale_y_continuous(name = 'FEE slope',
                        breaks = pretty_breaks(n = 3)) +
@@ -226,11 +226,12 @@ myplot <-
   ggplot(r, aes(x = rsq, fill = run)) +
     geom_histogram(bins = 50,
                    color = 'black') +
-    scale_fill_manual(values = c('black', 'white'),
+    scale_fill_manual(values = c('white', 'black'),
                       name = '') +
     scale_x_continuous(name = expression(paste(italic(R)^2, ' predicted vs. observed')),
                        breaks = c(0, 0.5, 1),
-                       labels = c('0', '0.5', '1')) +
+                       labels = c('0', '0.5', '1'),
+                       limits = c(-0.1, 1.1)) +
     scale_y_continuous(name = 'Frequency',
                        expand = expansion(mult = c(0, .1))) +
     theme_bw() +

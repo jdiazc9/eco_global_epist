@@ -9,17 +9,17 @@ library(tidyverse)
 # load data
 data <- read.csv('../pyoverdine_data/training_set.csv')
 data <- lapply(1:3,
-               FUN = function(i) matrix2string(data[, c(1:8, 8+i)]))
+               FUN = function(i) matrix2string(data[1:(nrow(data) - 1), c(1:8, 8+i)]))
 
 # full species names
-sp_names <- setNames(c('E. mori',
-                       'P. putida',
-                       'K. grimontii',
-                       'P. fulva',
-                       'P. parafulva',
-                       'R. ornithinolytica',
-                       'P. cremoricolorata',
-                       'P. savastanoi'),
+sp_names <- setNames(c('Enterobacter sp.',
+                       'Pseudomonas sp. 02',
+                       'Klebsiella sp.',
+                       'Pseudomonas sp. 03',
+                       'Pseudomonas sp. 04',
+                       'Raoultella sp.',
+                       'Pseudomonas sp. 01',
+                       'Pseudomonas sp. 05'),
                      paste('sp', 1:8, sep = '_'))
 
 ge_data <- lapply(data, FUN = makeGEdata)
@@ -44,14 +44,14 @@ ge_data$d_f.sd <- as.numeric(sapply(1:nrow(ge_data),
 
 ge_data$knock_in <- sp_names[ge_data$knock_in]
 ge_data$knock_in <- factor(ge_data$knock_in,
-                           levels = c("K. grimontii",
-                                      "E. mori",
-                                      "R. ornithinolytica",
-                                      "P. savastanoi",
-                                      "P. parafulva",
-                                      "P. fulva",
-                                      "P. putida",
-                                      "P. cremoricolorata")) # ordered from lower to higher function in monoculture
+                           levels = c("Pseudomonas sp. 01",
+                                      "Pseudomonas sp. 02",
+                                      "Pseudomonas sp. 03",
+                                      "Pseudomonas sp. 04",
+                                      "Pseudomonas sp. 05",
+                                      "Enterobacter sp.",
+                                      "Raoultella sp.",
+                                      "Klebsiella sp.")) # ordered from higher to lower function in monoculture
 
 # plot panel D
 myplot <-
@@ -71,9 +71,9 @@ myplot <-
                 se = F,
                 fullrange = T) +
     scale_x_continuous(breaks = pretty_breaks(n = 3),
-                       name = 'Function of ecological background [a.u.]') +
+                       name = 'Function of ecological background [uM]') +
     scale_y_continuous(breaks = pretty_breaks(n = 3),
-                       name = 'dF [a.u.]') +
+                       name = 'dF [uM]') +
     facet_wrap(~knock_in,
                nrow = 2) +
     theme_bw() +
@@ -109,11 +109,11 @@ data$fun.mean <- as.numeric(sapply(1:nrow(data),
 data$fun.sd <- as.numeric(sapply(1:nrow(data),
                                  FUN = function(i) sd(as.numeric(data[i, 2:4]))))
 
-all_contrib <- data[data$community == '2,4,5,7,8', ]
+all_contrib <- data[data$community == 'sp_2,sp_4,sp_5,sp_7,sp_8', ]
 best_comm <- data[data$fun.mean > all_contrib$fun.mean, ]
 
 # plot histogram of functions (panel C)
-myplot <- data[, c('community', 'fun.mean')] %>% add_row(community = 'range', fun.mean = range(data$fun.mean) + c(-0.1, 0.1)) %>%
+myplot <- data[, c('community', 'fun.mean')] %>% add_row(community = 'range', fun.mean = range(data$fun.mean) + c(-17, 17)) %>%
   ggplot(aes(x = fun.mean)) +
     geom_histogram(aes(y = ..count../sum(..count..)),
                    bins = 30,
@@ -133,7 +133,7 @@ myplot <- myplot +
   geom_vline(xintercept = all_contrib$fun.mean,
              linetype = 'dashed') +
   scale_x_continuous(breaks = pretty_breaks(n = 3),
-                     name = 'Community\nfunction [a.u.]') +
+                     name = 'Community\nfunction [uM]') +
   scale_y_continuous(breaks = pretty_breaks(n = 3),
                      name = 'Fraction') +
   theme_bw() +
@@ -162,7 +162,7 @@ ggsave(myplot,
 
 # plot inset of panel E
 myplot <-
-  ggplot(ge_data[ge_data$knock_in == 'E. mori', ],
+  ggplot(ge_data[ge_data$knock_in == 'Enterobacter sp.', ],
          aes(x = background_f.mean, xmin = background_f.mean - background_f.sd, xmax = background_f.mean + background_f.sd,
              y = d_f.mean, ymin = d_f.mean - d_f.sd, ymax = d_f.mean + d_f.sd,
              group = knock_in)) +
@@ -177,10 +177,10 @@ myplot <-
               se = F,
               fullrange = T) +
   scale_x_continuous(breaks = pretty_breaks(n = 3),
-                     name = 'Function of ecological background [a.u.]') +
+                     name = 'Function of ecological background [uM]') +
   scale_y_continuous(breaks = pretty_breaks(n = 3),
-                     name = 'dF [a.u.]',
-                     limits = c(-0.22, 0.25)) +
+                     name = 'dF [uM]',
+                     limits = c(-35, 50)) +
   theme_bw() +
   theme(panel.grid = element_blank(),
         strip.background = element_blank(),
@@ -246,10 +246,10 @@ myplot <-
     geom_point(shape = 1,
                cex = 2) +
     scale_x_continuous(breaks = pretty_breaks(n = 3),
-                       name = 'Predicted F [a.u.]',
+                       name = 'Predicted F [uM]',
                        limits = range) +
     scale_y_continuous(breaks = pretty_breaks(n = 3),
-                       name = ' \nObserved F [a.u.]',
+                       name = ' \nObserved F [uM]',
                        limits = range) +
     theme_bw() +
     theme(panel.grid = element_blank(),

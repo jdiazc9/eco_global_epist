@@ -8,7 +8,7 @@ library(tidyverse)
 library(cowplot)
 
 # load data sets
-files <- list.files('../pyoverdine_data', full.names = T)
+files <- list.files('../pyoverdine_data', full.names = T, recursive = F, pattern = '.csv')
 data <- lapply(files, FUN = function(file) read.csv(file))
 
 data <- lapply(data,
@@ -167,12 +167,12 @@ myplot <-
                 se = FALSE,
                 fullrange = TRUE,
                 color = 'firebrick1') +
-    scale_x_continuous(name = expression(paste(italic(F), '(background) [a.u.]')),
+    scale_x_continuous(name = expression(paste(italic(F), '(background) [uM]')),
                        breaks = pretty_breaks(n = 2),
-                       limits = c(0, 0.5)) +
-    scale_y_continuous(name = 'dF [a.u.]',
+                       limits = c(0, 80)) +
+    scale_y_continuous(name = 'dF [uM]',
                        breaks = pretty_breaks(n = 2),
-                       limits = c(-0.2, 0.1)) +
+                       limits = c(-35, 20)) +
     theme_bw() +
     theme(panel.grid = element_blank(),
           strip.background = element_blank(),
@@ -211,12 +211,12 @@ myplot <-
                 se = FALSE,
                 fullrange = TRUE,
                 color = 'firebrick1') +
-    scale_x_continuous(name = expression(paste(italic(F), '(background) [a.u.]')),
+    scale_x_continuous(name = expression(paste(italic(F), '(background) [uM]')),
                        breaks = pretty_breaks(n = 2),
-                       limits = c(0, 0.5)) +
-    scale_y_continuous(name = 'dF [a.u.]',
+                       limits = c(0, 80)) +
+    scale_y_continuous(name = 'dF [uM]',
                        breaks = pretty_breaks(n = 2),
-                       limits = c(-0.2, 0.1)) +
+                       limits = c(-35, 20)) +
     theme_bw() +
     theme(panel.grid = element_blank(),
           strip.background = element_blank(),
