@@ -685,7 +685,6 @@ predictF_base <- function(target, data) {
 
 }
 
-
 predictF_fullClosure <- function(target, data, eps) {
 
   # predict the function of a community (target) starting from the function of an in-sample community

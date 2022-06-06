@@ -68,7 +68,7 @@ rsq_vs_nInSample <- function(n_in_sample, data = data) {
 
 }
 
-n_insample <- sort(rep(seq(60,200, by = 20), 200))
+n_insample <- sort(rep(seq(60, 200, by = 20), 500))
 rsq <- rep(NA, length(n_insample))
 F_opt <- rep(NA, length(n_insample))
 for (i in 1:length(rsq)) {
