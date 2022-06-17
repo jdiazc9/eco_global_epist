@@ -4,9 +4,11 @@ rm(list = ls())
 source('./ecoFunctions.R')
 library(scales)
 library(gridExtra)
+library(cowplot)
 
 # load data sets
-data <- lapply(list.files('../data_sets', full.names = T), FUN = function(file) read.csv(file))
+files <- list.files('../data_sets', full.names = T)
+data <- lapply(files, FUN = function(file) read.csv(file))
 
 # full species names
 sp_names <- vector(mode = 'list', length = length(data))
@@ -140,3 +142,88 @@ ggsave(myplot,
        units = 'mm',
        limitsize = F)
 
+# distribution of R squared
+ge_data <- lapply(data, FUN = function(x) makeGEdata(matrix2string(x)))
+data_sets <- gsub('.csv', '', basename(files))
+ge_data <- lapply(1:length(ge_data), FUN = function(i) cbind(data_set = data_sets[i], ge_data[[i]]))
+ge_data <- do.call(rbind, ge_data)
+ge_data$knock_in[ge_data$knock_in == 'P' & containsSpecies('T', ge_data$background)] <- 'P-1'
+
+rsq <- data.frame(data_set = character(0),
+                  species = character(0),
+                  rsq = numeric(0),
+                  slope = numeric(0))
+for (ds in data_sets) {
+  for (sp in unique(ge_data$knock_in[ge_data$data_set == ds])) {
+    
+    n <- ge_data$data_set == ds & ge_data$knock_in == sp
+    rsq <- rbind(rsq,
+                 data.frame(data_set = ds,
+                            species = sp,
+                            rsq = cor(ge_data$background_f[n], ge_data$d_f[n])^2,
+                            slope = lm(d_f ~ background_f, data = ge_data[n, ])$coefficients[2]))
+    
+  }
+}
+rsq$species[rsq$species == 'P-1'] <- 'P'
+rsq$data_set <- factor(rsq$data_set, levels = data_sets[c(4, 3, 5, 1, 2)])
+
+myplot1 <- 
+  ggplot(rsq, aes(x = 0, y = rsq)) +
+    geom_jitter(size = 3) +
+    facet_wrap(~data_set, nrow = 1) +
+    scale_x_continuous(name = '',
+                       limits = c(-0.75, 0.75)) +
+    scale_y_continuous(name = expression(paste(italic(R)^2, ' of FEE')),
+                       limits = c(0, 1)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          strip.background = element_blank(),
+          strip.text = element_text(face = 'italic',
+                                    size = 10),
+          aspect.ratio = 3,
+          axis.text = element_text(size = 14),
+          axis.title = element_text(size = 18),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.border = element_blank(),
+          panel.background = element_blank(),
+          legend.position = 'none') +
+    annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+    annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5) +
+    annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
+    annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
+
+myplot2 <-
+  ggplot(rsq, aes(x = rsq)) +
+    geom_histogram(bins = 20) +
+    coord_flip() +
+    scale_x_continuous(name = expression(paste(italic(R)^2, ' of FEE'))) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          strip.background = element_blank(),
+          strip.text = element_text(face = 'italic',
+                                    size = 10),
+          aspect.ratio = 3,
+          axis.text = element_text(size = 14),
+          axis.title = element_text(size = 18),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.title.x = element_blank(),
+          panel.border = element_blank(),
+          panel.background = element_blank(),
+          legend.position = 'none') +
+    annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf,size=0.5)
+
+r <- 0.75
+myplot <- plot_grid(myplot1, myplot2, rel_widths = c(r, 1-r))
+
+print(myplot)
+ggsave(myplot,
+       filename = '../plots/figS0.5.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 200,
+       height = 100,
+       units = 'mm',
+       limitsize = F)

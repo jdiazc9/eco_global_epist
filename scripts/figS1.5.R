@@ -144,16 +144,4 @@ ggsave(myplot,
 
 
 
-if (F) {
-
-ggsave(myplot,
-       filename = '../plots/fig1.pdf',
-       device = 'pdf',
-       dpi = 600,
-       width = 200,
-       height = 500,
-       units = 'mm',
-       limitsize = F)
-  
-}
 
