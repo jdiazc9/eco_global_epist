@@ -1,5 +1,3 @@
-rm(list = ls())
-
 # load auxiliary functions
 source('./ecoFunctions.R')
 library(scales)
