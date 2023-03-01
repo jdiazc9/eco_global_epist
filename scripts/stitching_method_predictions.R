@@ -1,3 +1,5 @@
+rm(list = ls())
+
 # load auxiliary functions
 source('./ecoFunctions.R')
 library(scales)
@@ -108,8 +110,112 @@ for (i in 1:5) {
              max(c(po_i$fun_obs, po_i$fun_pred)))
   
   # plot
-  plot1 <-
-    ggplot(po_i, aes(x = fun_pred, y = fun_obs)) +
+  if (i == 4) { # if Kuebbing dataset, split invasive and native subsets
+    
+    po_i$subset <- grepl('inv', po_i$community)
+    po$subset <- grepl('inv', po$community)
+    
+    plot1 <-
+      ggplot(po_i, aes(x = fun_pred, y = fun_obs, shape = subset)) +
+      geom_abline(slope = 1,
+                  intercept = 0,
+                  color = '#d1d3d4') +
+      geom_point(cex = 3) +
+      scale_x_continuous(breaks = pretty_breaks(n = 3),
+                         name = expression(paste('Predicted ', italic('F'), ' [a.u.]', sep = '')),
+                         limits = range) +
+      scale_y_continuous(breaks = pretty_breaks(n = 3),
+                         name = expression(paste('Observed ', italic('F'), ' [a.u.]', sep = '')),
+                         limits = range) +
+      scale_shape_manual(values = c(1, 16),
+                         name = 'invasives?') +
+      theme_bw() +
+      theme(panel.grid = element_blank(),
+            strip.background = element_blank(),
+            strip.text = element_text(face = 'italic',
+                                      size = 10),
+            aspect.ratio = 0.6,
+            axis.text = element_text(size = 16),
+            axis.title = element_text(size = 18),
+            panel.border = element_blank(),
+            panel.background = element_blank(),
+            legend.position = c(0.75, 0.25)) +
+      annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+      annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
+      
+    r_squared <- do.call(rbind,
+                         lapply(unique(po$run),
+                                FUN = function(n) {
+                                  
+                                  if (sum(po$subset[po$run == n]) > 1) {
+                                    rsq_inv <- summary(lm(data = po[po$run == n & grepl('inv', po$community), ],
+                                                          formula = fun_obs ~ fun_pred))$r.squared
+                                  } else {
+                                    rsq_inv <- NA
+                                  }
+                                  
+                                  if (sum(!po$subset[po$run == n]) > 1) {
+                                    rsq_nat <- summary(lm(data = po[po$run == n & grepl('nat', po$community), ],
+                                                          formula = fun_obs ~ fun_pred))$r.squared
+                                  } else {
+                                    rsq_nat <- NA
+                                  }
+                                  
+                                  return(data.frame(subset = c(TRUE, FALSE),
+                                                    r_squared = c(rsq_inv,
+                                                                  rsq_nat)))
+                                  
+                                }))
+    r_squared <- r_squared[!is.na(r_squared$r_squared), ]
+    
+    plot2 <-
+      ggplot(r_squared, aes(x = r_squared, fill = subset)) +
+      geom_histogram(aes(y = ..count../sum(..count..)),
+                     bins = 15,
+                     alpha = 0.75,
+                     color = 'black') +
+      scale_x_continuous(name = expression(italic(R^2)),
+                         breaks = c(0, 0.5, 1),
+                         labels = c('0', '0.5', '1')) +
+      scale_y_continuous(name = '') +
+      scale_fill_manual(values = c('white', 'black'),
+                        name = 'Invasives?') +
+      theme_bw() +
+      theme(panel.grid = element_blank(),
+            strip.background = element_blank(),
+            strip.text = element_text(face = 'italic',
+                                      size = 10),
+            aspect.ratio = 1,
+            axis.text = element_text(size = 16),
+            axis.title = element_text(size = 18),
+            axis.text.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            panel.border = element_blank(),
+            panel.background = element_blank(),
+            legend.position = c(0.25, 0.75)) +
+      annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+      annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
+    
+    myplot <- plot_grid(plot1, plot2,
+                        align = 'v',
+                        nrow = 1,
+                        rel_heights = c(3/4, 1/4),
+                        rel_widths = c(3/4, 1/4))
+    
+    print(myplot)
+    ggsave(myplot,
+           filename = paste('../plots/stitching_predictions_', i, '.pdf', sep = ''),
+           device = 'pdf',
+           dpi = 600,
+           width = 200,
+           height = 100,
+           units = 'mm',
+           limitsize = F)
+    
+  } else {
+    
+    plot1 <-
+      ggplot(po_i, aes(x = fun_pred, y = fun_obs)) +
       geom_abline(slope = 1,
                   intercept = 0,
                   color = '#d1d3d4') +
@@ -134,9 +240,9 @@ for (i in 1:5) {
             legend.position = 'none') +
       annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
       annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
-  
-  plot2 <-
-    ggplot(data.frame(r = r_squared), aes(x = r)) +
+    
+    plot2 <-
+      ggplot(data.frame(r = r_squared), aes(x = r)) +
       geom_histogram(aes(y = ..count../sum(..count..)),
                      bins = 15,
                      fill = 'black',
@@ -161,22 +267,24 @@ for (i in 1:5) {
             legend.position = 'none') +
       annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
       annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
-  
-  myplot <- plot_grid(plot1, plot2,
-                      align = 'v',
-                      nrow = 1,
-                      rel_heights = c(3/4, 1/4),
-                      rel_widths = c(3/4, 1/4))
-  
-  print(myplot)
-  ggsave(myplot,
-         filename = paste('../plots/stitching_predictions_', i, '.pdf', sep = ''),
-         device = 'pdf',
-         dpi = 600,
-         width = 200,
-         height = 100,
-         units = 'mm',
-         limitsize = F)
+    
+    myplot <- plot_grid(plot1, plot2,
+                        align = 'v',
+                        nrow = 1,
+                        rel_heights = c(3/4, 1/4),
+                        rel_widths = c(3/4, 1/4))
+    
+    print(myplot)
+    ggsave(myplot,
+           filename = paste('../plots/stitching_predictions_', i, '.pdf', sep = ''),
+           device = 'pdf',
+           dpi = 600,
+           width = 200,
+           height = 100,
+           units = 'mm',
+           limitsize = F)
+    
+  }
   
 }
 
