@@ -1,5 +1,3 @@
-rm(list = ls())
-
 library(tidyverse)
 library(glmnet)
 library(cowplot)
@@ -43,11 +41,16 @@ get_folds <- function(df, unique_communities, n_folds = 10){
 # get leave-one-out fit for a specified dataset #### 
 #####################################################
 
-get_all_loo_fits <- function(df, v = FALSE){
+get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
   
   N <- ncol(df) -1 
   
   all_species <- colnames(df)[1:N]
+  
+  if (any(rowSums(df[,1:N]) == 0)){
+    df <- df[-which(rowSums(df[,1:N]) == 0),]
+  }
+  
   communities <- sapply(1:nrow(df),
                         FUN = function(i) paste(all_species[df[i, -ncol(df)] == 1], collapse = ','))
   unique_communities <- unique(communities)
@@ -56,7 +59,8 @@ get_all_loo_fits <- function(df, v = FALSE){
   #add mean fitness to df 
   df <- df %>% group_by(community) %>% mutate(mean_fitness = mean(`function`)) %>% ungroup() 
   
-  mean_df <- df %>% distinct(community, .keep_all = TRUE) %>% dplyr::select(-c(fitness))
+  mean_df <- df %>% distinct(community, .keep_all = TRUE) %>% dplyr::select(-c(`function`))
+  colnames(mean_df)[which(colnames(mean_df) == 'mean_fitness')] <- 'function'
   
   ####################
   #### stitching #####
@@ -64,9 +68,12 @@ get_all_loo_fits <- function(df, v = FALSE){
   
   loo_res <- tibble()
   for (exp in unique_communities){
+    print(exp)
     exp_inds <- which(mean_df$community == exp)
     
     data <- mean_df[-exp_inds,] %>% dplyr::select(-community) 
+    
+    ###DELETE THIS
     if (! any(rowSums(mean_df[,1:N]) == 0)){
       data <- rbind(data, rep(0, (N + 1)))
     }
@@ -77,9 +84,16 @@ get_all_loo_fits <- function(df, v = FALSE){
     data <- matrix2string(data)
     ge_data <- makeGEdata(data)
     
-    eps <- try(inferAllResiduals(ge_data))
+    if (mode == 'full'){
+      eps <- try(inferAllResiduals(ge_data))
+      predF <- predictF_fullClosure(target$community, data, eps)
+      
+    } else if (mode == 'base'){
+      
+      predF <- predictF_base(target$community, data)
+      
+    }
     
-    predF <- predictF_fullClosure(target$community, data, eps)
     po <- merge(target, predF, by = 'community', suffixes = c('_obs', '_pred'))
     colnames(po) <- c('community', 'observed', 'predicted')
     
@@ -94,7 +108,7 @@ get_all_loo_fits <- function(df, v = FALSE){
   for (exp in unique_communities){
     exp_inds <- which(df$community == exp)
     #set up regression
-    y <- as.matrix(df[-exp_inds,]$fitness)   
+    y <- as.matrix(df[-exp_inds,]$`function`)   
     f <- as.formula(y ~ .)
     x <- model.matrix(f, df[-exp_inds,] %>% dplyr::select(all_of(all_species)))
     
@@ -104,7 +118,7 @@ get_all_loo_fits <- function(df, v = FALSE){
     cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids) 
     
     #get out of fit cv 
-    y_test <- as.matrix(df[exp_inds[1],]$fitness)
+    y_test <- as.matrix(df[exp_inds[1],]$`function`)
     f_test <- as.formula(y_test ~ .)
     x_test <- model.matrix(f_test, df[exp_inds[1],] %>% dplyr::select(all_of(all_species)))
     y_pred_cv <- predict(cv_fit, x_test, s = "lambda.1se" )
@@ -127,7 +141,7 @@ get_all_loo_fits <- function(df, v = FALSE){
     
     exp_inds <- which(df$community == exp)
     #set up regression
-    y <- as.matrix(df[-exp_inds,]$fitness)   
+    y <- as.matrix(df[-exp_inds,]$`function`)   
     f <- as.formula(y ~ .*.)
     x <- model.matrix(f, df[-exp_inds,] %>% dplyr::select(all_of(all_species)))
     
@@ -137,7 +151,7 @@ get_all_loo_fits <- function(df, v = FALSE){
     cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids) 
     
     #get out of fit cv 
-    y_test <- as.matrix(df[exp_inds[1],]$fitness)
+    y_test <- as.matrix(df[exp_inds[1],]$`function`)
     f_test <- as.formula(y_test ~ .*.)
     x_test <- model.matrix(f_test, df[exp_inds[1],] %>% dplyr::select(all_of(all_species)))
     y_pred_cv <- predict(cv_fit, x_test, s = "lambda.1se" )
@@ -155,128 +169,6 @@ get_all_loo_fits <- function(df, v = FALSE){
               loo_res_second_order = loo_res_second_order))
 }
 
-#######################################
-###     get model fits with         ###
-###    randomized % out of sample   ###
-#######################################
-
-fit_all_models_oof <- function(df, N, reps, v = FALSE){
-  res <- tibble()
-  
-  all_species <- colnames(df)[1:N]
-  communities <- sapply(1:nrow(df),
-                        FUN = function(i) paste(all_species[df[i, -ncol(df)] == 1], collapse = ','))
-  unique_communities <- unique(communities)
-  df <- df %>% mutate(community = communities) 
-  
-  #add mean fitness to df 
-  df <- df %>% group_by(community) %>% mutate(mean_fitness = mean(fitness)) %>% ungroup() 
-  
-  mean_df <- df %>% distinct(community, .keep_all = TRUE) %>% dplyr::select(-c(fitness))
-  
-  infit_range <- c(.6, .7, .8, .9)
-  for (infit_pct in infit_range){
-    for (i in 1:reps){
-      if (v == TRUE){print(paste0('infit pct is: ', infit_pct, 'rep: ', i))} 
-      
-      #get random training sample of communities  
-      train_ids <- sample(1:length(unique_communities), (infit_pct) * length(unique_communities))
-      train <- which(df$community %in% unique_communities[train_ids])
-      
-      train_stitching <- which(mean_df$community %in% unique_communities[train_ids])
-      data <- mean_df[train_stitching,] %>% dplyr::select(-community)
-      
-      #need to add 0 community
-      data <- rbind(data, rep(0, (N + 1)))
-      #process data for stitching procedure
-      obsF <- mean_df[-train_stitching,] %>% dplyr::select(-community)
-      target <- matrix2string(obsF)
-      
-      data <- matrix2string(data)
-      ge_data <- makeGEdata(data)
-      
-      eps <- try(inferAllResiduals(ge_data))
-      
-      #get stitching predictions
-      predF <- predictF_fullClosure(target$community, data, eps)
-      po <- merge(target, predF, by = 'community', suffixes = c('_obs', '_pred'))
-      colnames(po) <- c('community', 'observed', 'predicted')
-      
-      #get stitching metrics 
-      r2 <- cor(po$observed, po$predicted)^2
-      rmse_stitching <- get_rmse(po$observed, po$predicted)
-      
-      #################################
-      # first order linear regression #
-      #################################
-      
-      #set up regression
-      y <- as.matrix(df[train,]$fitness)   
-      f <- as.formula(y ~ .)
-      x <- model.matrix(f, df[train,] %>% dplyr::select(all_of(all_species)))
-      
-      unique_communities_train <- unique_communities[train_ids]
-      fold_ids <- get_folds(df[train,], unique_communities_train, n_folds = 10)
-      
-      cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids) 
-      
-      #get out of fit cv 
-      y_test <- as.matrix(df[-train,]$fitness)
-      f_test <- as.formula(y_test ~ .)
-      x_test <- model.matrix(f_test, df[-train,] %>% dplyr::select(all_of(all_species)))
-      y_pred_cv <- predict(cv_fit, x_test, s = "lambda.1se" )
-      
-      #bind predictions
-      all_pred <- df[-train,] %>% mutate(predicted = y_pred_cv[,1]) %>% 
-        distinct(community, .keep_all = TRUE)
-      
-      #get metrics cv
-      r2_lin <- cor(all_pred$mean_fitness, all_pred$predicted)^2 
-      rmse_lin <- get_rmse(all_pred$mean_fitness, all_pred$predicted)
-      
-      
-      #################################
-      # second order linear regression #
-      #################################
-      y <- as.matrix(df[train,]$fitness)
-      f <- as.formula(y ~ .*.)
-      x <- model.matrix(f, df[train,] %>% dplyr::select(all_of(all_species)))
-      
-      unique_communities_train <- unique_communities[train_ids]
-      fold_ids <- get_folds(df[train,], unique_communities_train, n_folds = 10)
-      
-      cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids) 
-      
-      #get out of fit cv 
-      y_test <- as.matrix(df[-train,]$fitness)
-      f_test <- as.formula(y_test ~ .*.)
-      x_test <- model.matrix(f_test, df[-train, 1:N])
-      y_pred_cv <- predict(cv_fit, x_test, s = "lambda.1se" )
-      
-      #bind predictions
-      all_pred <- df[-train,] %>% mutate(predicted = y_pred_cv[,1]) %>% 
-        distinct(community, .keep_all = TRUE)
-      
-      #get metrics cv
-      r2_cv_pairs <- cor(all_pred$mean_fitness, all_pred$predicted)^2 
-      rmse_cv_pairs <- get_rmse(all_pred$mean_fitness, all_pred$predicted)
-      
-      plot(po$observed, po$predicted, main = 'stitching pred')
-      abline(0,1)
-      
-      plot(all_pred$mean_fitness, all_pred$predicted, main = 'cv pred')
-      abline(0,1)
-      
-      #bind this all together 
-      tmp <- list(r2 = r2, r2_lin = r2_lin, r2_cv_pairs = r2_cv_pairs, 
-                  rmse_stitching = rmse_stitching, rmse_lin = rmse_lin,
-                  rmse_cv_pairs = rmse_cv_pairs, 
-                  infit_pct = infit_pct)
-      res <- rbind(res, tmp)
-    }
-  }
-  return(res)
-}
 
 #################################
 ### get leave-one-out fits for ##
@@ -286,22 +178,59 @@ fit_all_models_oof <- function(df, N, reps, v = FALSE){
 #list all dataframe paths
 path <- '../data_sets/'
 all_datasets <- list.files(path = path)
+all_datasets <- c(paste0(path, all_datasets), '../pyoverdine_data/training_set.csv')
 
-# want GE_biomass, Kuebbing natives, langenheder, pyoverdine, starch
-all_datasets <- all_datasets[c(2,3, 6,7,8,9)]
+all_datasets <- all_datasets[!grepl('Clark', all_datasets)]
 
 p_list <- list()
-res <- tibble() 
+res <- tibble()
+res_full <- tibble()
 for (dataset_id in 1:length(all_datasets)){
-  df <- read_csv(paste0(path, all_datasets[dataset_id]), show_col_types = F)
+  df <- read_csv(all_datasets[dataset_id], show_col_types = F)
   
-  name <- str_remove(all_datasets[dataset_id], '.csv')
+  name <- str_remove(basename(all_datasets[dataset_id]), '.csv')
   
-  if (name == 'starch_data'){
-    df <- df[-which(rowSums(df[,1:6]) == 0),]
+  if (name == 'butyrate_Clark2021'){
+    mode <- 'base'
+  } else {
+    mode <- 'full'
   }
   
-  loo_fits <- get_all_loo_fits(df) 
+  if (grepl('training_set', name)){
+    df$`function` <- rowMeans(df[, 9:11])
+    df <- df[, c(1:8, 12)]
+  }
+  
+  if (grepl('Ghedini', name)){
+    df$`function` <- df$`function`/1e4
+  }
+  
+  df <- aggregate(formula = `function` ~ .,
+                  data = df,
+                  FUN = mean)
+  
+  loo_fits <- get_all_loo_fits(df, mode)
+  
+  loo_fits$loo_res$pred[loo_fits$loo_res$pred < 0] <- 0
+  loo_fits$loo_res_first_order$pred[loo_fits$loo_res_first_order$pred < 0] <- 0
+  loo_fits$loo_res_second_order$pred[loo_fits$loo_res_second_order$pred < 0] <- 0
+  
+  res_full <- rbind(res_full,
+                    rbind(data.frame(dataset = name,
+                                     method = 'stitching',
+                                     pred = loo_fits$loo_res$pred,
+                                     obs = loo_fits$loo_res$obs,
+                                     sq_err = abs(loo_fits$loo_res$obs - loo_fits$loo_res$pred)/mean(loo_fits$loo_res$obs)),
+                          data.frame(dataset = name,
+                                     method = 'first_order',
+                                     pred = loo_fits$loo_res_first_order$pred,
+                                     obs = loo_fits$loo_res_first_order$obs,
+                                     sq_err = abs(loo_fits$loo_res_first_order$obs - loo_fits$loo_res_first_order$pred)/mean(loo_fits$loo_res_first_order$obs)),
+                          data.frame(dataset = name,
+                                     method = 'second_order',
+                                     pred = loo_fits$loo_res_second_order$pred,
+                                     obs = loo_fits$loo_res_second_order$obs,
+                                     sq_err = abs(loo_fits$loo_res_second_order$obs - loo_fits$loo_res_second_order$pred)/mean(loo_fits$loo_res_second_order$obs))))
   
   tmp <- list(name = name, r2 = loo_fits$r2, r2_first_order = loo_fits$r2_first_order,
               r2_second_order = loo_fits$r2_second_order)
@@ -340,71 +269,151 @@ for (dataset_id in 1:length(all_datasets)){
   print(p)
   p_list[[dataset_id]] <- p
   
-  #save(r2_loo, r2_linear_loo, res, paste0('~/global_epistasis_microbes/code/model_comparison/', name, '_model_comparison_loo.RData')) 
+  #save(r2_loo, r2_linear_loo, res, 
+    #paste0('../', name, '_model_comparison_loo.RData')) 
 }
 
+plot_grid(p_list[[1]], p_list[[2]], p_list[[3]], p_list[[4]], p_list[[5]])
 
-plot_grid(p_list[[1]], p_list[[2]], p_list[[3]], p_list[[4]], p_list[[5]], p_list[[6]])
+# plot pred. vs obs.
+res_full$dataset <- setNames(c('Bacterial\nstarch hydrolysis',
+                               'Phytoplankton\nbiomass',
+                               'Above-ground\nplant biomass',
+                               'Bacterial\npyoverdine secretion',
+                               'Bacterial\nxylose oxidation'),
+                             unique(res_full$dataset))[res_full$dataset]
+res_full$dataset <- factor(res_full$dataset,
+                           levels = c('Bacterial\npyoverdine secretion',
+                                      'Above-ground\nplant biomass',
+                                      'Phytoplankton\nbiomass',
+                                      'Bacterial\nxylose oxidation',
+                                      'Bacterial\nstarch hydrolysis'))
 
-#reshape 
-res_long <- res %>% pivot_longer(-name, names_to = 'r2_type') 
+scales_limits_pred <- rbind(aggregate(formula = pred~method+dataset,
+                                      data = res_full,
+                                      FUN = max),
+                            aggregate(formula = pred~method+dataset,
+                                      data = res_full,
+                                      FUN = min))
+scales_limits_obs <- rbind(aggregate(formula = obs~method+dataset,
+                                     data = res_full,
+                                     FUN = max),
+                           aggregate(formula = obs~method+dataset,
+                                     data = res_full,
+                                     FUN = min))
 
-#set order 
-res_long$r2_type <- factor(res_long$r2_type, levels = c('r2_first_order', 'r2_second_order', 'r2'))
+colnames(scales_limits_obs) <- c('method', 'dataset', 'f')
+colnames(scales_limits_pred) <- c('method', 'dataset', 'f')
 
-#plot
-res_long %>% 
-  ggplot(aes(x = name, y = value, group = interaction(name,r2_type), fill = r2_type)) + 
-  geom_col(position = 'dodge') + theme_bw() + xlab('Dataset') +
-  ylab(bquote(italic(R)^2)) + 
-  coord_cartesian(ylim = c(0, 1)) + 
-  guides(fill = guide_legend('Model')) +
-  scale_fill_discrete(labels=c('r2_first_order' = 'First-order linear regression', 
-                               'r2_second_order'= 'Second-order linear regression', 
-                               'r2' = 'Stitching method'))
+scales_limits <- rbind(scales_limits_pred, scales_limits_obs)
 
+scales_limits <- rbind(aggregate(formula = f~dataset,
+                                 data = scales_limits,
+                                 FUN = max),
+                       aggregate(formula = f~dataset,
+                                 data = scales_limits,
+                                 FUN = min))
 
-ggsave('~/global_epistasis_microbes/Figures/stitching_vs_reg_all_data.png', height = 8, width = 10)
+scales_limits <- rbind(cbind(scales_limits, method = 'stitching'),
+                       cbind(scales_limits, method = 'first_order'),
+                       cbind(scales_limits, method = 'second_order'))
 
-################################
-# run oof for all datasets #####
-################################
+scales_limits$pred <- scales_limits$f
+scales_limits$obs <- scales_limits$f
 
-#list all dataframe paths
-path <- '~/global_epistasis_clean/Data/'
-all_datasets <- list.files(path = path)
+scales_limits <- scales_limits[, c('method', 'dataset', 'pred', 'obs')]
 
-# want GE_biomass, Kuebbing natives, langenheder, pyoverdine, starch
-# ghedini ~will~ throw an error. Could implement this with a more robust check
-# to make sure we can fit linear patterns, but this also has issues and maybe isn't
-# needed? 
+ggplot(res_full, aes(x = pred, y = obs)) +
+  geom_abline(slope = 1,
+              intercept = 0,
+              color = '#d1d3d4') +
+  geom_point() +
+  geom_blank(data = scales_limits, aes(x = pred, y = obs)) +
+  scale_x_continuous(breaks = pretty_breaks(n = 3),
+                     name = expression(paste('Predicted ', italic('F'), ' [a.u.]', sep = ''))) +
+  scale_y_continuous(breaks = pretty_breaks(n = 3),
+                     name = expression(paste('Observed ', italic('F'), ' [a.u.]', sep = ''))) +
+  facet_wrap(method~dataset,
+             scales = 'free',
+             ncol = length(all_datasets)) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = 'italic',
+                                  size = 10),
+        aspect.ratio = 1,
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position = 'none') +
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
 
-all_datasets <- all_datasets[c(2,6,7,8,9)]
+ggsave(filename = '../plots/stitching_vs_regression.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 300,
+       height = 200,
+       units = 'mm',
+       limitsize = F)
 
-p_list <- list()
-for (dataset_id in 1:length(all_datasets)){
-  df <- read_csv(paste0(path, all_datasets[dataset_id]))
+# plot R squared
+
+rsq <- do.call(rbind,
+               lapply(unique(res_full$dataset),
+                      FUN = function(ds) {
+                        
+                        rsq <- data.frame(dataset = character(0),
+                                          method = character(0),
+                                          r2 = numeric(0))
+                        
+                        for (method in unique(res_full$method)) {
+                          lmod <- lm(formula = pred~obs,
+                                     data = res_full[res_full$dataset == ds & res_full$method == method, ])
+                          rsq <- rbind(rsq,
+                                       data.frame(dataset = ds,
+                                                  method = method,
+                                                  r2 = summary(lmod)$r.squared))
+                        }
+                        
+                        return(rsq)
+                        
+                      }))
+
+ggplot(rsq, aes(x = method, y = r2, fill = method)) +
+  geom_bar(stat = 'identity',
+           width = 0.8) +
+  facet_wrap(~dataset,
+             nrow = 1) +
+  scale_y_continuous(name = 'R2',
+                     limits = c(0, 1),
+                     breaks = pretty_breaks(n = 4)) +
+  scale_fill_manual(values = c('#99d7dc', '#176766', '#b33a3b')) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = 'italic',
+                                  size = 10),
+        aspect.ratio = 1.6,
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position = 'bottom') +
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5) +
+  annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
+  annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
+
+ggsave(filename = '../plots/stitching_vs_regression_R2.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 200,
+       height = 150,
+       units = 'mm',
+       limitsize = F)
   
-  name <- str_remove(all_datasets[dataset_id], '.csv')
-  N <- ncol(df) - 1 
-  
-  res <- fit_all_models_oof(df, N, reps = 50, v = TRUE)
-  
-  to_plot <- res %>% dplyr::select(c(r2, r2_lin, r2_cv_pairs, infit_pct)) 
-  colnames(to_plot) <- c('Stitching Method', 'First-order Linear Regression', 
-                         'Second-order Linear Regression', 'infit_pct')
-  to_plot <- to_plot %>% pivot_longer(-infit_pct) 
-  colnames(to_plot) <- c('infit_pct', 'Model', 'r2') 
-  p <- to_plot %>% ggplot(aes(x = as.factor(infit_pct), y = r2, fill = Model)) + 
-    geom_boxplot() + theme_bw() + 
-    xlab('Percent data in fit') + ylab(bquote(italic(R)^2)) + 
-    ggtitle(name )
-  
-  print(p)
-  
-  p_list[[dataset_id]] <- p
-  
-}
-
-plot_grid(p_list[[1]], p_list[[2]], p_list[[3]], p_list[[4]], p_list[[5]] )
-
