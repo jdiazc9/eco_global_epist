@@ -233,18 +233,22 @@ for (dataset_id in 1:length(all_datasets)){
   
 }
 
+legacy <- res_full
+
+res_full$invasives <- grepl('_invasives', res_full$dataset)
+res_full$dataset <- gsub('_invasives', '', res_full$dataset)
+res_full$dataset <- gsub('_natives', '', res_full$dataset)
+
 # plot pred. vs obs.
 res_full$dataset <- setNames(c('Bacterial\nstarch hydrolysis',
                                'Phytoplankton\nbiomass',
-                               'Above-ground\nplant biomass, natives',
+                               'Above-ground\nplant biomass',
                                'Bacterial\nxylose oxidation',
-                               'Above-ground\nplant biomass, invasives',
                                'Bacterial\npyoverdine secretion'),
                              unique(res_full$dataset))[res_full$dataset]
 res_full$dataset <- factor(res_full$dataset,
                            levels = c('Bacterial\npyoverdine secretion',
-                                      'Above-ground\nplant biomass, natives',
-                                      'Above-ground\nplant biomass, invasives',
+                                      'Above-ground\nplant biomass',
                                       'Phytoplankton\nbiomass',
                                       'Bacterial\nxylose oxidation',
                                       'Bacterial\nstarch hydrolysis'))
@@ -282,20 +286,22 @@ scales_limits$pred <- scales_limits$f
 scales_limits$obs <- scales_limits$f
 
 scales_limits <- scales_limits[, c('method', 'dataset', 'pred', 'obs')]
+scales_limits$invasives <- FALSE
 
-ggplot(res_full, aes(x = pred, y = obs)) +
+ggplot(res_full, aes(x = pred, y = obs, shape = invasives)) +
   geom_abline(slope = 1,
               intercept = 0,
               color = '#d1d3d4') +
-  geom_point() +
+  geom_point(cex = 3) +
   geom_blank(data = scales_limits, aes(x = pred, y = obs)) +
   scale_x_continuous(breaks = pretty_breaks(n = 3),
                      name = expression(paste('Predicted ', italic('F'), ' [a.u.]', sep = ''))) +
   scale_y_continuous(breaks = pretty_breaks(n = 3),
                      name = expression(paste('Observed ', italic('F'), ' [a.u.]', sep = ''))) +
+  scale_shape_manual(values = c(16, 1)) +
   facet_wrap(method~dataset,
              scales = 'free',
-             ncol = length(all_datasets)) +
+             nrow = 3) +
   theme_bw() +
   theme(panel.grid = element_blank(),
         strip.background = element_blank(),
@@ -320,9 +326,11 @@ ggsave(filename = '../plots/stitching_vs_regression.pdf',
 
 # plot R squared
 
+res_full$inter <- paste(res_full$dataset, res_full$invasives, sep = ' / ')
+
 rsq <- do.call(rbind,
-               lapply(unique(res_full$dataset),
-                      FUN = function(ds) {
+               lapply(unique(res_full$inter),
+                      FUN = function(inter) {
                         
                         rsq <- data.frame(dataset = character(0),
                                           method = character(0),
@@ -330,9 +338,9 @@ rsq <- do.call(rbind,
                         
                         for (method in unique(res_full$method)) {
                           lmod <- lm(formula = pred~obs,
-                                     data = res_full[res_full$dataset == ds & res_full$method == method, ])
+                                     data = res_full[res_full$inter == inter & res_full$method == method, ])
                           rsq <- rbind(rsq,
-                                       data.frame(dataset = ds,
+                                       data.frame(inter = inter,
                                                   method = method,
                                                   r2 = summary(lmod)$r.squared))
                         }
@@ -341,15 +349,34 @@ rsq <- do.call(rbind,
                         
                       }))
 
-ggplot(rsq, aes(x = method, y = r2, fill = method)) +
+rsq$invasives <- grepl('TRUE', rsq$inter)
+
+rsq$inter <- gsub(' / TRUE', '', rsq$inter)
+rsq$inter <- gsub(' / FALSE', '', rsq$inter)
+colnames(rsq)[1] <- 'dataset'
+
+rsq$dataset <- factor(rsq$dataset,
+                      levels = c('Bacterial\npyoverdine secretion',
+                                 'Above-ground\nplant biomass',
+                                 'Phytoplankton\nbiomass',
+                                 'Bacterial\nxylose oxidation',
+                                 'Bacterial\nstarch hydrolysis'))
+
+rsq$natives <- !rsq$invasives
+
+ggplot(rsq, aes(x = method, y = r2, fill = interaction(method, natives), color = interaction(method, natives))) +
   geom_bar(stat = 'identity',
-           width = 0.8) +
+           width = 0.6,
+           position = 'dodge') +
   facet_wrap(~dataset,
              nrow = 1) +
   scale_y_continuous(name = 'R2',
                      limits = c(0, 1),
                      breaks = pretty_breaks(n = 4)) +
-  scale_fill_manual(values = c('#99d7dc', '#176766', '#b33a3b')) +
+  scale_color_manual(values = c('#99d7dc', '#176766', '#b33a3b',
+                                'white', 'white', 'white')) +
+  scale_fill_manual(values = c('white', 'white', 'white',
+                               '#99d7dc', '#176766', '#b33a3b')) +
   theme_bw() +
   theme(panel.grid = element_blank(),
         strip.background = element_blank(),
