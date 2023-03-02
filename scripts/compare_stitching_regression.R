@@ -288,16 +288,16 @@ scales_limits$obs <- scales_limits$f
 scales_limits <- scales_limits[, c('method', 'dataset', 'pred', 'obs')]
 scales_limits$invasives <- FALSE
 
-ggplot(res_full, aes(x = pred, y = obs, shape = invasives)) +
+ggplot(res_full, aes(x = obs, y = pred, shape = invasives)) +
   geom_abline(slope = 1,
               intercept = 0,
               color = '#d1d3d4') +
   geom_point(cex = 3) +
   geom_blank(data = scales_limits, aes(x = pred, y = obs)) +
   scale_x_continuous(breaks = pretty_breaks(n = 3),
-                     name = expression(paste('Predicted ', italic('F'), ' [a.u.]', sep = ''))) +
-  scale_y_continuous(breaks = pretty_breaks(n = 3),
                      name = expression(paste('Observed ', italic('F'), ' [a.u.]', sep = ''))) +
+  scale_y_continuous(breaks = pretty_breaks(n = 3),
+                     name = expression(paste('Predicted ', italic('F'), ' [a.u.]', sep = ''))) +
   scale_shape_manual(values = c(16, 1)) +
   facet_wrap(method~dataset,
              scales = 'free',
