@@ -7,12 +7,6 @@ source('ecoFunctions.R')
 ##########################
 ####   functions    ######
 ###########################
-
-#metric 
-get_rmse <- function(observed, predicted){
-  return(sqrt(sum((observed - predicted)^2)/length(observed)))
-}
-
 #helper function for cross-validated regression
 get_folds <- function(df, unique_communities, n_folds = 10){
   
@@ -178,23 +172,21 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
 #list all dataframe paths
 path <- '../data_sets/'
 all_datasets <- list.files(path = path)
-all_datasets <- c(paste0(path, all_datasets), '../pyoverdine_data/training_set.csv')
+all_datasets <- c(all_datasets, all_datasets[grepl('Kuebbing', all_datasets)]) #duplicate Kuebbing
+all_datasets <- c(paste0(path, all_datasets), '../pyoverdine_data/training_set.csv' )
 
 all_datasets <- all_datasets[!grepl('Clark', all_datasets)]
 
-p_list <- list()
-res <- tibble()
+#kuebbing flag 
+sub_dataset1 <- 'TRUE'
+
 res_full <- tibble()
 for (dataset_id in 1:length(all_datasets)){
   df <- read_csv(all_datasets[dataset_id], show_col_types = F)
   
   name <- str_remove(basename(all_datasets[dataset_id]), '.csv')
-  
-  if (name == 'butyrate_Clark2021'){
-    mode <- 'base'
-  } else {
-    mode <- 'full'
-  }
+
+  mode <- 'full'
   
   if (grepl('training_set', name)){
     df$`function` <- rowMeans(df[, 9:11])
@@ -205,9 +197,16 @@ for (dataset_id in 1:length(all_datasets)){
     df$`function` <- df$`function`/1e4
   }
   
-  df <- aggregate(formula = `function` ~ .,
-                  data = df,
-                  FUN = mean)
+  if (name == "plant-biommass_Kuebbing2016_all"){
+    if (sub_dataset1){
+      df <- df[,c(1:4, 9)]
+      name <- paste0(name, '_natives')
+      sub_dataset1 <- FALSE
+    } else{
+      df <- df[,c(5:8, 9)]
+      name <- paste0(name, '_invasives')
+    }
+  } 
   
   loo_fits <- get_all_loo_fits(df, mode)
   
@@ -232,59 +231,20 @@ for (dataset_id in 1:length(all_datasets)){
                                      obs = loo_fits$loo_res_second_order$obs,
                                      sq_err = abs(loo_fits$loo_res_second_order$obs - loo_fits$loo_res_second_order$pred)/mean(loo_fits$loo_res_second_order$obs))))
   
-  tmp <- list(name = name, r2 = loo_fits$r2, r2_first_order = loo_fits$r2_first_order,
-              r2_second_order = loo_fits$r2_second_order)
-  res <- rbind(res, tmp)
-  
-  max_scale <- max(max(loo_fits$loo_res$obs, loo_fits$loo_res$pred), loo_fits$loo_res_second_order$pred)
-  min_scale <- min(min(loo_fits$loo_res$obs, loo_fits$loo_res$pred), loo_fits$loo_res_second_order$pred)
-  
-  p_stitching <- ggplot(loo_fits$loo_res, aes(x = obs, y = pred)) + geom_point() + 
-    theme_bw() + geom_abline() + xlab('Observed') + ylab('Predicted') + 
-    scale_x_continuous(limits = c(min_scale, max_scale)) + 
-    scale_y_continuous(limits = c(min_scale, max_scale)) + 
-    ggtitle('Stitching Method')
-  
-  p_regression <- ggplot(loo_fits$loo_res_second_order, aes(x = obs, y = pred)) + geom_point() + 
-    theme_bw() + geom_abline() + xlab('Observed') + ylab('Predicted') + 
-    scale_x_continuous(limits = c(min_scale, max_scale)) + 
-    scale_y_continuous(limits = c(min_scale, max_scale)) + 
-    ggtitle('Second-order Regression')
-  
-  p <- plot_grid(p_stitching, p_regression)
-  
-  title <- ggdraw() + 
-    draw_label(
-      paste0(name),
-      fontface = 'bold'
-      ) + 
-    theme(plot.margin = margin(0, 0, 0, 7))
-  p <- plot_grid(
-    title, p,
-    ncol = 1,
-    # rel_heights values control vertical title margins
-    rel_heights = c(0.1, 1)
-  )
-  
-  print(p)
-  p_list[[dataset_id]] <- p
-  
-  #save(r2_loo, r2_linear_loo, res, 
-    #paste0('../', name, '_model_comparison_loo.RData')) 
 }
-
-plot_grid(p_list[[1]], p_list[[2]], p_list[[3]], p_list[[4]], p_list[[5]])
 
 # plot pred. vs obs.
 res_full$dataset <- setNames(c('Bacterial\nstarch hydrolysis',
                                'Phytoplankton\nbiomass',
-                               'Above-ground\nplant biomass',
-                               'Bacterial\npyoverdine secretion',
-                               'Bacterial\nxylose oxidation'),
+                               'Above-ground\nplant biomass, natives',
+                               'Bacterial\nxylose oxidation',
+                               'Above-ground\nplant biomass, invasives',
+                               'Bacterial\npyoverdine secretion'),
                              unique(res_full$dataset))[res_full$dataset]
 res_full$dataset <- factor(res_full$dataset,
                            levels = c('Bacterial\npyoverdine secretion',
-                                      'Above-ground\nplant biomass',
+                                      'Above-ground\nplant biomass, natives',
+                                      'Above-ground\nplant biomass, invasives',
                                       'Phytoplankton\nbiomass',
                                       'Bacterial\nxylose oxidation',
                                       'Bacterial\nstarch hydrolysis'))
