@@ -403,4 +403,108 @@ ggsave(filename = '../plots/stitching_vs_regression_R2.pdf',
        height = 150,
        units = 'mm',
        limitsize = F)
-  
+
+# top and bottom-performing communities
+threshold <- 0.1
+top_bottom <- do.call(data.frame, aggregate(formula = obs ~ inter,
+                                  data = res_full,
+                                  FUN = function(x) quantile(x, probs = c(threshold, 1 - threshold))))
+colnames(top_bottom)[2:3] <- c('lower_bound', 'upper_bound')
+which_top_bottom <- sapply(1:nrow(res_full),
+                           FUN = function(i) {
+                             res_full$obs[i] < top_bottom$lower_bound[top_bottom$inter == res_full$inter[i]] | res_full$obs[i] > top_bottom$upper_bound[top_bottom$inter == res_full$inter[i]]
+                           })
+
+res_top_bottom <- res_full[which_top_bottom, ]
+
+res_top_bottom$err <- abs(res_top_bottom$pred - res_top_bottom$obs)
+res_top_bottom$rel_err <- log10(abs(res_top_bottom$pred - res_top_bottom$obs)/res_top_bottom$obs)
+
+ggplot(res_top_bottom, aes(x = method, y = rel_err, fill = interaction(method, !invasives), color = interaction(method, !invasives))) +
+  geom_boxplot(outlier.colour = 'gray',
+               width = 0.5) +
+  facet_wrap(~dataset,
+             nrow = 1,
+             scales = 'free_y') +
+  scale_y_continuous(name = expression(log[10]~'|'*italic(F)['pred'] - italic(F)['obs']*'|'*'/'*italic(F)['obs']),
+                     breaks = pretty_breaks(n = 4)) +
+  scale_color_manual(values = c('#99d7dc', '#176766', '#b33a3b',
+                                'black', 'black', 'black')) +
+  scale_fill_manual(values = c('white', 'white', 'white',
+                               '#99d7dc', '#176766', '#b33a3b')) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = 'italic',
+                                  size = 10),
+        aspect.ratio = 1.6,
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position = 'bottom') +
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5) +
+  annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
+  annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
+
+ggsave(filename = '../plots/stitching_vs_regression_top_bottom_relErr.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 230,
+       height = 150,
+       units = 'mm',
+       limitsize = F)
+
+ggplot(res_top_bottom, aes(x = method, y = err, fill = interaction(method, !invasives), color = interaction(method, !invasives))) +
+  geom_boxplot(outlier.colour = 'gray',
+               width = 0.5) +
+  facet_wrap(~dataset,
+             nrow = 1,
+             scales = 'free_y') +
+  scale_y_continuous(name = expression(log[10]~'|'*italic(F)['pred'] - italic(F)['obs']*'|'*'/'*italic(F)['obs']),
+                     breaks = pretty_breaks(n = 4)) +
+  scale_color_manual(values = c('#99d7dc', '#176766', '#b33a3b',
+                                'black', 'black', 'black')) +
+  scale_fill_manual(values = c('white', 'white', 'white',
+                               '#99d7dc', '#176766', '#b33a3b')) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = 'italic',
+                                  size = 10),
+        aspect.ratio = 1.6,
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position = 'bottom') +
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5) +
+  annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
+  annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
+
+ggsave(filename = '../plots/stitching_vs_regression_top_bottom_absErr.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 230,
+       height = 150,
+       units = 'mm',
+       limitsize = F)
+
+
+
+
+
+
+
+
+
+
+
