@@ -37,7 +37,7 @@ names(data) <- c(basename(files), 'pyo', 'khan')
 
 # average function of repeats
 data <- lapply(data,
-               FUN = function(data_i) aggregate(formula = function. ~., data = data_i, FUN = mean))
+               FUN = function(data_i) aggregate(function. ~., data = data_i, FUN = mean))
 
 # scale values for phytoplankton data
 data[[3]]$function. <- data[[3]]$function./1e4
