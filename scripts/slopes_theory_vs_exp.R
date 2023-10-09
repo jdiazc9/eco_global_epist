@@ -234,6 +234,9 @@ for (thurin in c(0, 1)) {
   
 }
 
+# save FEE params
+write.table(fees, file = './empirical_FEEs.txt', sep = '\t', row.names = F, quote = F)
+
 # plot effect sizes
 plot_this <- params[params$dataset != 'khan', ]
 plot_this$dataset <- gsub('_inv', '', plot_this$dataset)
@@ -514,6 +517,13 @@ mycolors <- setNames(c('black',
                        '#519ed7',
                        'black'),
                      levels(plot_this$dataset))
+
+mycor <- do.call(rbind,
+                 lapply(unique(plot_this$dataset),
+                        FUN = function(ds) data.frame(dataset = ds,
+                                                      spearman_cor = cor(plot_this$slope[plot_this$dataset == ds],
+                                                                         plot_this$expected_slope[plot_this$dataset == ds],
+                                                                         method = 'spearman'))))
 
 # standardize intercepts so they can be plotted in a common scale
 plot_this$intercept.std <- plot_this$intercept
@@ -1163,4 +1173,9 @@ ggsave(file = paste('../plots/fitnessGraph_inset.pdf', sep = ''),
        height = 100,
        units = 'mm')
 
+
+
+
+# write params table for comparison with phi_ij
+write.table(params, file = 'params_eps.txt', quote = F, sep = '\t', row.names = F)
 

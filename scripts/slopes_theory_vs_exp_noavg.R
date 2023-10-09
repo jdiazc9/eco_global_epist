@@ -486,3 +486,14 @@ ggsave(filename = '../plots/slopes_predictions_noavg.pdf',
        units = 'mm',
        limitsize = F)
 
+
+# write params table for comparison with phi_ij
+write.table(params, file = 'params_phi.txt', quote = F, sep = '\t', row.names = F)
+
+mycor <- do.call(rbind,
+                 lapply(unique(plot_this$dataset),
+                        FUN = function(ds) data.frame(dataset = ds,
+                                                      spearman_cor = cor(plot_this$slope[plot_this$dataset == ds],
+                                                                         plot_this$expected_slope[plot_this$dataset == ds],
+                                                                         method = 'spearman'))))
+write.table(mycor, file = 'corr_eps.txt', quote = F, sep = '\t', row.names = F)

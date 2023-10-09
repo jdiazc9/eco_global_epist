@@ -162,7 +162,7 @@ for (i in 1:5) {
   
   # if there are multiple measurements of a same community, average them
   colnames(data[[i]])[ncol(data[[i]])] <- 'fun'
-  data[[i]] <- aggregate(formula = fun ~ .,
+  data[[i]] <- aggregate(fun ~ .,
                          data = data[[i]],
                          FUN = mean)
   
