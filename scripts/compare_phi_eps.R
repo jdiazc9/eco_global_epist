@@ -222,13 +222,18 @@ mycor <- do.call(rbind,
                           y <- plot_this$eff_inter[plot_this$dataset == ds]
                           
                           n <- !is.na(x) & !is.na(y)
+                          x <- x[n]
+                          y <- y[n]
+                          
+                          res <- y - x
+                          R2_identity <- 1 - sum(res^2)/sum((y - mean(y))^2) # R squared of the y = x model
                           
                           return(data.frame(dataset = ds,
-                                            cor = cor(x[n], y[n])))
+                                            cor = R2_identity))
                           
                         }))
 mycor$cor <- sapply(mycor$cor,
-                    FUN = function(x) paste('R2 = ', substr(as.character(x^2), 1, 4), sep = ''))
+                    FUN = function(x) paste('R2 = ', substr(as.character(x), 1, 4), sep = ''))
 
 ranges <- do.call(rbind,
                   lapply(unique(plot_this$dataset),
@@ -345,15 +350,23 @@ mycor <- do.call(rbind,
                                FUN = function(ds){
                                  
                                  slopes_i <- slopes[slopes$dataset == ds, ]
+                                 
+                                 x <- slopes_i$empirical_slope
+                                 y_eps <- slopes_i$slope_eps
+                                 y_phi <- slopes_i$slope_phi
+                                 
+                                 R2_eps <- 1 - sum((y_eps - x)^2)/sum((y_eps - mean(y_eps))^2)
+                                 R2_phi <- 1 - sum((y_phi - x)^2)/sum((y_phi - mean(y_phi))^2)
+                                 
                                  return(data.frame(dataset = ds,
-                                                   cor_eps = cor(slopes_i$empirical_slope, slopes_i$slope_eps),
-                                                   cor_phi = cor(slopes_i$empirical_slope, slopes_i$slope_phi)))
+                                                   cor_eps = R2_eps,
+                                                   cor_phi = R2_phi))
                                  
                                }))
 mycor$cor_eps <- sapply(mycor$cor_eps,
-                        FUN = function(x) paste('R2 = ', substr(as.character(x^2), 1, 4), sep = ''))
+                        FUN = function(x) paste('R2 = ', substr(as.character(x), 1, 4), sep = ''))
 mycor$cor_phi <- sapply(mycor$cor_phi,
-                        FUN = function(x) paste('R2 = ', substr(as.character(x^2), 1, 4), sep = ''))
+                        FUN = function(x) paste('R2 = ', substr(as.character(x), 1, 4), sep = ''))
 
 ranges <- do.call(rbind,
                   lapply(unique(slopes$dataset),
@@ -426,7 +439,7 @@ ggplot(slopes[!(slopes$dataset == 'Bacterial starch hydrolysis' & slopes$species
                      name = 'Data set') +
   scale_shape_manual(values = c(16, 3),
                      name = 'Type of data set') +
-  scale_x_continuous(name = 'FEE slope\nexpected from averaged interactions',
+  scale_x_continuous(name = 'FEE slope\nexpected from one- and two-species communities',
                      limits = lims) +
   scale_y_continuous(name = 'Empirical FEE slope',
                      limits = lims) +

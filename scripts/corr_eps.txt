@@ -1,8 +1,8 @@
 dataset	spearman_cor
-Bacterial starch hydrolysis	0.952380952380953
-Bacterial butyrate secretion	0.1
-E. coli fitness	1
-Phytoplankton biomass	1
-Above-ground plant biomass	0.976190476190476
-Bacterial pyoverdine secretion	0.928571428571429
-Bacterial xylose oxidation	0.885714285714286
+Bacterial starch hydrolysis	0.285714285714286
+Bacterial butyrate secretion	0.4
+E. coli fitness	0.9
+Phytoplankton biomass	0.9
+Above-ground plant biomass	0.928571428571429
+Bacterial pyoverdine secretion	0.3
+Bacterial xylose oxidation	0.6
