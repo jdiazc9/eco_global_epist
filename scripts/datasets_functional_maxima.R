@@ -35,7 +35,7 @@ f_monoc <- lapply(1:length(data),
                   FUN = function(i) {
                     
                     datai <- matrix2string(data[[i]])
-                    datai <- aggregate(formula = fun ~ community,
+                    datai <- aggregate(fun ~ community,
                                        data = datai,
                                        FUN = mean)
                     
@@ -52,7 +52,7 @@ f_opt <- lapply(1:length(data),
                   datai <- data[[i]]
                   colnames(datai)[1:(ncol(datai) - 1)] <- sp_names[[i]][colnames(datai)[1:(ncol(datai) - 1)]]
                   datai <- matrix2string(datai)
-                  datai <- aggregate(formula = fun ~ community,
+                  datai <- aggregate(fun ~ community,
                                      data = datai,
                                      FUN = mean)
                   
