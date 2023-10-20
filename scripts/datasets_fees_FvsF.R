@@ -3,6 +3,7 @@ source('./ecoFunctions.R')
 library(scales)
 library(gridExtra)
 library(cowplot)
+library(ggbreak)
 
 # load data sets
 files <- list.files('../data_sets', full.names = T)
@@ -82,7 +83,7 @@ ggplot(ge_data_pyo, aes(x = background_f.mean, xmin = background_f.mean - backgr
               color = '#d1d3d4') +
   geom_point(color = 'black',
              cex = 2,
-             shape = 16) +
+             shape = 1) +
   geom_errorbar(alpha = 0.25) +
   geom_errorbarh(alpha = 0.25) +
   geom_smooth(method = 'lm',
@@ -134,7 +135,7 @@ ggplot(ge_data_khan, aes(x = background_f, y = knockin_f, group = knock_in)) +
   geom_blank(aes(x = knockin_f, y = background_f)) + # to homogenize x and y scales
   geom_point(color = 'black',
              cex = 3,
-             shape = 16) +
+             shape = 1) +
   geom_smooth(method = 'lm',
               formula = y~x,
               color = 'firebrick1',
@@ -240,7 +241,8 @@ for (i in 1:5) {
                 color = 'gray') +
     geom_blank(aes(x = knockin_f, y = background_f)) + # to homogenize y and x scales
     geom_point(color = 'black',
-               shape = 20) +
+               shape = 1,
+               cex = 2) +
     geom_smooth(method = 'lm',
                 formula = y~x,
                 se = FALSE,
@@ -281,8 +283,8 @@ ggsave(myplot,
        filename = '../plots/datasets_fees_FvsF.pdf',
        device = 'pdf',
        dpi = 600,
-       width = 200,
-       height = 500,
+       width = 300,
+       height = 600,
        units = 'mm',
        limitsize = F)
 
@@ -382,7 +384,143 @@ ggsave(myplot,
        units = 'mm',
        limitsize = F)
 
+# save FEE parameters fit to the FvsF representation
+fees_fvsf <- do.call(rbind,
+                     lapply(1:6,
+                            FUN = function(i) {
+                              
+                              ge_data <- makeGEdata(matrix2string(data[[i]]))
+                              
+                              ge_data$group <- ge_data$knock_in
+                              if (any(ge_data$knock_in == 'P')) ge_data$group[ge_data$knock_in == 'P' & grepl('T', ge_data$background)] <- 'P.T'
+                              ge_data$knockin_f <- ge_data$background_f + ge_data$d_f
+                              
+                              # make linear fits
+                              lfits <- do.call(rbind,
+                                               lapply(unique(ge_data$group),
+                                                      FUN = function(grp) {
+                                                        lfit_i <- summary(lm(formula = knockin_f ~ background_f,
+                                                                             data = ge_data[ge_data$group == grp, ]))
+                                                        out <- data.frame(dataset = basename(files)[i],
+                                                                          species = grp,
+                                                                          slope = lfit_i$coefficients[2, 1],
+                                                                          intercept = lfit_i$coefficients[1, 1],
+                                                                          slope_stderr = lfit_i$coefficients[2, 2],
+                                                                          intercept_stderr = lfit_i$coefficients[1, 2])
+                                                        return(out)
+                                                      }))
+                              
+                              if(grepl('amyl', basename(files)[i])) {
+                                lfits$species[lfits$species == 'P'] <- 'P_0'
+                                lfits$species[lfits$species == 'P.T'] <- 'P_1'
+                              }
+                              if(grepl('training_set', basename(files)[i])) lfits$dataset <- 'pyo'
+                              
+                              return(lfits)
+                              
+                            }))
 
+# check if slopes differ from one
+fees_fvsf$dataset <- factor(fees_fvsf$dataset,
+                            levels = c("pyo",
+                                       "plant-biommass_Kuebbing2016_all.csv",
+                                       "phytoplankton-biomass_Ghedini2022.csv",
+                                       "xylose_Langenheder2010.csv",
+                                       "amyl_Sanchez-Gorostiaga2019.csv",
+                                       "butyrate_Clark2021.csv"))
+
+ggplot(fees_fvsf, aes(x = 0, y = slope, ymin = slope - slope_stderr, ymax = slope + slope_stderr)) +
+  geom_abline(slope = 0, intercept = 1, color = 'gray') +
+  geom_blank(aes(x = 0, y = 1)) +
+  geom_pointrange(size = 0.5,
+                  position = position_jitter(width = 0.5)) +
+  facet_wrap(~dataset, nrow = 1, scales = 'free_y') +
+  scale_x_continuous(name = '',
+                     limits = c(-0.75, 0.75)) +
+  scale_y_continuous(name = expression(paste('Slope of ', italic(F)(bold(s)+bold(i)), ' vs. ', italic(F)(bold(s)), ' regression', sep = '')),
+                     breaks = pretty_breaks(n = 2)) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = 'italic',
+                                  size = 10),
+        aspect.ratio = 3,
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 18),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position = 'none') +
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5) +
+  annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
+  annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
+
+ggsave(filename = '../plots/datasets_slopes_FvsF.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 200,
+       height = 100,
+       units = 'mm',
+       limitsize = F)
+
+# how many species display a slope =/= 1?
+upper_lims <- fees_fvsf$slope + fees_fvsf$slope_stderr
+lower_lims <- fees_fvsf$slope - fees_fvsf$slope_stderr
+
+fraction_of_slopes_different_from_one <- 1 - sum(upper_lims>1 & lower_lims<1) / length(upper_lims)
+
+# compare with FEEs fit to the dF-vs-F representation
+fees <- do.call(rbind,
+                lapply(1:6,
+                       FUN = function(i) {
+                         
+                         ge_data <- makeGEdata(matrix2string(data[[i]]))
+                         
+                         ge_data$group <- ge_data$knock_in
+                         if (any(ge_data$knock_in == 'P')) ge_data$group[ge_data$knock_in == 'P' & grepl('T', ge_data$background)] <- 'P.T'
+                         ge_data$knockin_f <- ge_data$background_f + ge_data$d_f
+                         
+                         # make linear fits
+                         lfits <- do.call(rbind,
+                                          lapply(unique(ge_data$group),
+                                                 FUN = function(grp) {
+                                                   lfit_i <- summary(lm(formula = d_f ~ background_f,
+                                                                        data = ge_data[ge_data$group == grp, ]))
+                                                   out <- data.frame(dataset = basename(files)[i],
+                                                                     species = grp,
+                                                                     slope = lfit_i$coefficients[2, 1],
+                                                                     intercept = lfit_i$coefficients[1, 1],
+                                                                     slope_stderr = lfit_i$coefficients[2, 2],
+                                                                     intercept_stderr = lfit_i$coefficients[1, 2])
+                                                   return(out)
+                                                 }))
+                         
+                         if(grepl('amyl', basename(files)[i])) {
+                           lfits$species[lfits$species == 'P'] <- 'P_0'
+                           lfits$species[lfits$species == 'P.T'] <- 'P_1'
+                         }
+                         if(grepl('training_set', basename(files)[i])) lfits$dataset <- 'pyo'
+                         
+                         return(lfits)
+                         
+                       }))
+
+slopes_cmp <- merge(fees[, c('dataset', 'species', 'slope')],
+                    fees_fvsf[, c('dataset', 'species', 'slope')],
+                    by = c('dataset', 'species'),
+                    suffixes = c('', '_fvsf'))
+intercept_cmp <- merge(fees[, c('dataset', 'species', 'intercept')],
+                       fees_fvsf[, c('dataset', 'species', 'intercept')],
+                       by = c('dataset', 'species'),
+                       suffixes = c('', '_fvsf'))
+
+ggplot(slopes_cmp, aes(x = slope, y = slope_fvsf)) +
+  geom_point()
+
+ggplot(intercept_cmp, aes(x = intercept, y = intercept_fvsf)) +
+  geom_point()
 
 
 
