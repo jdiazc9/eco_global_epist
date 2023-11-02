@@ -172,6 +172,7 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
 #list all dataframe paths
 path <- '../data_sets/'
 all_datasets <- list.files(path = path)
+<<<<<<< Updated upstream
 all_datasets <- c(all_datasets, all_datasets[grepl('Kuebbing', all_datasets)]) #duplicate Kuebbing
 all_datasets <- c(paste0(path, all_datasets), '../pyoverdine_data/training_set.csv' )
 
@@ -180,11 +181,18 @@ all_datasets <- all_datasets[!grepl('Clark', all_datasets)]
 #kuebbing flag 
 sub_dataset1 <- 'TRUE'
 
+=======
+all_datasets <- c(paste0(path, all_datasets), '../pyoverdine_data/training_set.csv')
+
+p_list <- list()
+res <- tibble()
+>>>>>>> Stashed changes
 res_full <- tibble()
 for (dataset_id in 1:length(all_datasets)){
   df <- read_csv(all_datasets[dataset_id], show_col_types = F)
   
   name <- str_remove(basename(all_datasets[dataset_id]), '.csv')
+<<<<<<< Updated upstream
 
   mode <- 'full'
   
@@ -196,6 +204,46 @@ for (dataset_id in 1:length(all_datasets)){
   if (grepl('Ghedini', name)){
     df$`function` <- df$`function`/1e4
   }
+=======
+  
+  if (name == 'butyrate_Clark2021'){
+    mode <- 'base'
+  } else {
+    mode <- 'full'
+  }
+  
+  if (dataset_id == 6){
+    df$`function` <- rowMeans(df[, 9:11])
+    df <- df[, c(1:8, 12)]
+  }
+  
+  df <- aggregate(formula = `function` ~ .,
+                  data = df,
+                  FUN = mean)
+  
+  loo_fits <- get_all_loo_fits(df, mode)
+  
+  loo_fits$loo_res$pred[loo_fits$loo_res$pred < 0] <- 0
+  loo_fits$loo_res_first_order$pred[loo_fits$loo_res_first_order$pred < 0] <- 0
+  loo_fits$loo_res_second_order$pred[loo_fits$loo_res_second_order$pred < 0] <- 0
+  
+  res_full <- rbind(res_full,
+                    rbind(data.frame(dataset = name,
+                                     method = 'stitching',
+                                     pred = loo_fits$loo_res$pred,
+                                     obs = loo_fits$loo_res$obs,
+                                     sq_err = abs(loo_fits$loo_res$obs - loo_fits$loo_res$pred)/mean(loo_fits$loo_res$obs)),
+                          data.frame(dataset = name,
+                                     method = 'first_order',
+                                     pred = loo_fits$loo_res_first_order$pred,
+                                     obs = loo_fits$loo_res_first_order$obs,
+                                     sq_err = abs(loo_fits$loo_res_first_order$obs - loo_fits$loo_res_first_order$pred)/mean(loo_fits$loo_res_first_order$obs)),
+                          data.frame(dataset = name,
+                                     method = 'second_order',
+                                     pred = loo_fits$loo_res_second_order$pred,
+                                     obs = loo_fits$loo_res_second_order$obs,
+                                     sq_err = abs(loo_fits$loo_res_second_order$obs - loo_fits$loo_res_second_order$pred)/mean(loo_fits$loo_res_second_order$obs))))
+>>>>>>> Stashed changes
   
   if (name == "plant-biommass_Kuebbing2016_all"){
     if (sub_dataset1){
@@ -214,6 +262,7 @@ for (dataset_id in 1:length(all_datasets)){
   loo_fits$loo_res_first_order$pred[loo_fits$loo_res_first_order$pred < 0] <- 0
   loo_fits$loo_res_second_order$pred[loo_fits$loo_res_second_order$pred < 0] <- 0
   
+<<<<<<< Updated upstream
   res_full <- rbind(res_full,
                     rbind(data.frame(dataset = name,
                                      method = 'stitching',
@@ -508,3 +557,54 @@ ggsave(filename = '../plots/stitching_vs_regression_top_bottom_absErr.pdf',
 
 
 
+=======
+  p_regression <- ggplot(loo_fits$loo_res_second_order, aes(x = obs, y = pred)) + geom_point() + 
+    theme_bw() + geom_abline() + xlab('Observed') + ylab('Predicted') + 
+    scale_x_continuous(limits = c(min_scale, max_scale)) + 
+    scale_y_continuous(limits = c(min_scale, max_scale)) + 
+    ggtitle('Second-order Regression')
+  
+  p <- plot_grid(p_stitching, p_regression)
+  
+  title <- ggdraw() + 
+    draw_label(
+      paste0(name),
+      fontface = 'bold'
+      ) + 
+    theme(plot.margin = margin(0, 0, 0, 7))
+  p <- plot_grid(
+    title, p,
+    ncol = 1,
+    # rel_heights values control vertical title margins
+    rel_heights = c(0.1, 1)
+  )
+  
+  print(p)
+  p_list[[dataset_id]] <- p
+  
+  #save(r2_loo, r2_linear_loo, res, 
+    #paste0('../', name, '_model_comparison_loo.RData')) 
+}
+
+plot_grid(p_list[[1]], p_list[[2]], p_list[[3]], p_list[[4]], p_list[[5]]) 
+
+#reshape 
+res_long <- res %>% pivot_longer(-name, names_to = 'r2_type') 
+
+#set order 
+res_long$r2_type <- factor(res_long$r2_type, levels = c('r2_first_order', 'r2_second_order', 'r2'))
+
+#plot
+res_long %>% 
+  ggplot(aes(x = name, y = value, group = interaction(name,r2_type), fill = r2_type)) + 
+  geom_col(position = 'dodge') + theme_bw() + xlab('Dataset') +
+  ylab(bquote(italic(R)^2)) + 
+  coord_cartesian(ylim = c(0, 1)) + 
+  guides(fill = guide_legend('Model')) +
+  scale_fill_discrete(labels=c('r2_first_order' = 'First-order linear regression', 
+                               'r2_second_order'= 'Second-order linear regression', 
+                               'r2' = 'Stitching method'))
+
+
+##ggsave('~/global_epistasis_microbes/Figures/stitching_vs_reg_all_data.png', height = 8, width = 10)
+>>>>>>> Stashed changes
