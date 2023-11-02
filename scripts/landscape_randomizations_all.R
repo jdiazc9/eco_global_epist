@@ -4,6 +4,8 @@ library(scales)
 library(gridExtra)
 library(cowplot)
 library(ggbreak)
+library(tidyr)
+library(plotly)
 
 # load data sets
 files <- list.files('../data_sets', full.names = T)
@@ -16,6 +18,24 @@ data[[6]] <- data[[6]][, c(1:8, 12)]
 data <- lapply(data, FUN = function(df) aggregate(fun ~ ., data = matrix2string(df), FUN = mean))
 # data <- do.call(rbind,
 #                 lapply(1:length(data), FUN = function(i) cbind(dataset = basename(files)[i], data[[i]])))
+
+# full species names
+sp_names <- vector(mode = 'list', length = length(data))
+
+sp_names[[1]] <- setNames(c('B. cereus', 'B. megaterium', 'B. mojavensis', 'P. polymyxa', 'B. subtilis', 'B. thuringiensis'),
+                          c('C', 'E', 'M', 'P', 'S', 'T'))
+sp_names[[2]] <- setNames(c('P. copri','P. johnsonii','B. vulgatus','B. fragilis','B. ovatus','B. thetaiotaomicron','B. caccae','B. cellulosilyticus','B. uniformis','D. piger','B. longum','B. adolescentis','B. pseudocatenulatum','C. aerofaciens','E. lenta','F. prausnitzii','C. hiranonis','A. caccae','B. hydrogenotrophica','C. asparagiforme','E. rectale','R. intestinalis','C. comes','D. longicatena','D. formicigenerans'),
+                          c('PC','PJ','BV','BF','BO','BT','BC','BY','BU','DP','BL','BA','BP','CA','EL','FP','CH','AC','BH','CG','ER','RI','CC','DL','DF'))
+sp_names[[3]] <- setNames(c('A. carterae','Tetraselmis sp.','D. tertiolecta','Synechococcus sp.','T. lutea'),
+                          c('A','T','D','S','Ti'))
+sp_names[[4]] <- setNames(c('A. millefolium','L. capitata','P. virginianum','S. nutans','L. vulgare','L. cuneata','P. vulgaris','P.pratense'),
+                          c('as.nat','fa.nat','la.nat','po.nat','as.inv','fa.inv','la.inv','po.inv'))
+sp_names[[5]] <- setNames(c('Rhodoferax sp.','Flavobacterium sp.','Sphingoterrabacterium sp.','Burkholderia sp.','S. yanoikuyae','Bacteroidetes sp.'),
+                          c('SL68','SL104','SL106','SL187','SL197','SLWC2'))
+sp_names[[6]] <- setNames(c('Enterobacter sp.', 'Pseudomonas sp. 02', 'Klebsiella sp.', 'Pseudomonas sp. 03', 'Pseudomonas sp. 04', 'Raoultella sp.', 'Pseudomonas sp. 01', 'Pseudomonas sp. 05'),
+                          paste('sp', 1:8, sep = '_'))
+sp_names[[7]] <- setNames(c('glmUS', 'pykF', 'rbs', 'spoT', 'topA'),
+                          c('g', 'p', 'r', 's', 't'))
 
 randomizeLandscape <- function(df) {
   df$fun <- sample(df$fun)
@@ -232,7 +252,238 @@ ggsave(filename = '../plots/benchmark_intercept_vs_R2.pdf',
        units = 'mm',
        limitsize = F)
 
-# statistical tests
+# alternative analysis:
+# keep in mind that FEEs are not independent from one another within dataset
+# R2 and slope are also not independent
+# we consider each null model a realization of a 3N-dimensional vector (N is the number of species, we have a slope, an intercept, and an R2 for each)
+# we run a PCA to see how close the empirical 3N-vector is to the randomized landscapes
+
+splits <- lapply(1:length(data),
+                 FUN = function(i) rbind(randomizations[randomizations$dataset == basename(files)[i], ],
+                                         cbind(rnd_id = 'emp',
+                                               empirical_fees[empirical_fees$dataset == basename(files)[i], ])))
+                               
+splits <- lapply(splits,
+                 FUN = function(df) {
+                   df <- df[, c('rnd_id', 'species', 'slope', 'intercept', 'R2')]
+                   df <- pivot_wider(data = df, 
+                                     id_cols = rnd_id, 
+                                     names_from = species, 
+                                     values_from = c('slope', 'intercept', 'R2'))
+                   df <- as.data.frame(df)
+                   rownames(df) <- df$rnd_id
+                   return(df[, 2:ncol(df)])
+                 })
+
+alpha <- unique(randomizations[, c('rnd_id', 'dataset', 'alpha')])
+
+pc <- do.call(rbind,
+              lapply(1:length(data),
+                     FUN = function(i) {
+                       
+                       df <- splits[[i]]
+                       dfnorm <- scale(df)
+                       
+                       mypca <- prcomp(dfnorm)
+                       pc <- as.data.frame(mypca$x[, 1:2])
+                       pc <- cbind(dataset = basename(files)[i],
+                                   alpha = c(alpha$alpha[alpha$dataset == basename(files)[i]], NA),
+                                   type = c(rep('null_model', nrow(pc)-1), 'empirical'),
+                                   pc)
+                       
+                       return(pc)
+                       
+                     }))
+
+# plot
+pc$dataset <- factor(pc$dataset,
+                     levels = c("training_set.csv",
+                                "plant-biommass_Kuebbing2016_all.csv",
+                                "phytoplankton-biomass_Ghedini2022.csv",
+                                "xylose_Langenheder2010.csv",
+                                "amyl_Sanchez-Gorostiaga2019.csv",
+                                "butyrate_Clark2021.csv"))
+
+ggplot(pc, aes(x = PC1, y = PC2, color = alpha, alpha = type, size = type, shape = type)) +
+  geom_point(stroke = 0) +
+  facet_wrap(~ dataset,
+             nrow = 1) +
+  theme_bw() +
+  scale_x_continuous(name = 'PC 1',
+                     breaks = pretty_breaks(n = 2)) +
+  scale_y_continuous(name = 'PC 2',
+                     breaks = pretty_breaks(n = 2)) +
+  scale_alpha_manual(values = c(1, 0.5)) +
+  scale_shape_manual(values = c(15, 19)) +
+  scale_size_manual(values = c(4, 2)) +
+  scale_color_gradient(low = '#d32f37',
+                       high = '#76d3d6',
+                       na.value = 'black') +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = 'italic',
+                                  size = 10),
+        aspect.ratio = 1,
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        panel.background = element_blank())
+
+ggsave(filename = '../plots/benchmark_intercept_vs_R2.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 330,
+       height = 80,
+       units = 'mm',
+       limitsize = F)
+
+
+
+
+
+
+### PROJECTION PLOTS
+
+# wrapper function to make plot from a data frame
+makeProjPlot <- function(df, showaxes = F) {
+  
+  colnames(df) <- c('x', 'y', 'z', 'color')
+  
+  mins <- apply(df[, 1:3], FUN = min, MARGIN = 2)
+  maxs <- apply(df[, 1:3], FUN = max, MARGIN = 2)
+  
+  expands <- apply(df[, 1:3],
+                   FUN = function(x) diff(range(x))*0.1,
+                   MARGIN = 2)
+  mins <- mins - expands
+  maxs <- maxs + expands
+  
+  pplot <- plot_ly(x = ~x, y = ~y, z = ~z,
+                   marker = list(size = 6,
+                                 line = list(width = 0),
+                                 colorscale = list(c(0, 1), c('#d32f37', '#76d3d6')))) %>%
+    layout(scene = list(camera = list(projection = list(type = 'orthographic')),
+                        aspectmode = 'manual',
+                        aspectratio = list(x = 1, y = 1, z = 1),
+                        xaxis = list(range = c(mins['x'], maxs['x']),
+                                     title = c('', 'x')[1 + showaxes],
+                                     zeroline = F,
+                                     showticklabels = showaxes),
+                        yaxis = list(range = c(mins['y'], maxs['y']),
+                                     title = c('', 'y')[1 + showaxes],
+                                     zeroline = F,
+                                     showticklabels = showaxes),
+                        zaxis = list(range = c(mins['z'], maxs['z']),
+                                     title = c('', 'z')[1 + showaxes],
+                                     zeroline = F,
+                                     showticklabels = showaxes)),
+           showlegend = F)
+  
+  for (i in 1:3) {
+    
+    dfi <- df
+    dfi[, i] <- mins[i]
+    
+    pplot <- pplot %>% add_markers(data = dfi[1:(nrow(dfi) - 1), ],
+                                   marker = list(color = ~color),
+                                   opacity = 0.66)
+    pplot <- pplot %>% hide_colorbar()
+    pplot <- pplot %>% add_markers(data = dfi[nrow(dfi), ],
+                                   opacity = 1,
+                                   marker = list(color = 'black',
+                                                 size = 10,
+                                                 symbol = 'square'))
+    pplot <- pplot %>% hide_colorbar()
+    
+  }
+  
+  manual_axes <- data.frame(x = c(mins['x'], maxs['x'], rep(mins['x'], 4)),
+                            y = c(rep(mins['y'], 3), maxs['y'], rep(mins['y'], 2)),
+                            z = c(rep(mins['z'], 5), maxs['z']))
+  
+  pplot <- pplot %>% add_paths(data = manual_axes, x = ~x, y = ~y, z = ~z,
+                               marker = list(size = 5,
+                                             color = 'black',
+                                             opacity = 0.01),
+                               line = list(width = 4,
+                                           color = 'black'))
+  
+  return(pplot)
+  
+}
+
+for (i in 1:length(data)) {
+  
+  print(paste('DATASET #', i, sep = ''))
+  dfi <- rbind(randomizations[randomizations$dataset == basename(files)[i], c(2:ncol(randomizations))],
+               empirical_fees[empirical_fees$dataset == basename(files)[i], ])
+  
+  for (sp in unique(dfi$species)) {
+    
+    print(paste('   species #', which(sp == unique(dfi$species)), sep = ''))
+    
+    dfisp <- dfi[dfi$species == sp, c('slope', 'intercept', 'R2', 'alpha')]
+    
+    pplot <- makeProjPlot(dfisp)
+    orca(pplot,
+         file = paste('../plots/projections/',
+                      gsub('\\.csv', '', basename(files)[i]),
+                      '/',
+                      sp_names[[i]][sp],
+                      '.pdf', sep = ''),
+         scale = 2)
+    
+  }
+  
+}
+
+
+
+
+
+### STATISTICAL TESTS
+mytests <- do.call(rbind,
+                   lapply(1:length(files),
+                          FUN = function(i) {
+                            
+                            out <- do.call(rbind,
+                                           lapply(unique(randomizations$species[randomizations$dataset == basename(files)[i]]),
+                                                  FUN = function(sp) {
+                                                    
+                                                    df <- rbind(randomizations[randomizations$dataset == basename(files)[i] & randomizations$species == sp, c('slope', 'intercept', 'R2')],
+                                                                empirical_fees[empirical_fees$dataset == basename(files)[i] & empirical_fees$species == sp, c('slope', 'intercept', 'R2')])
+                                                    d <- as.matrix(dist(as.matrix(scale(df))))
+                                                    d <- as.matrix(dist(as.matrix(scale(df))))
+                                                    d0 <- min(d[nrow(d), 1:(ncol(d) - 1)])
+                                                    n_neighbors <- sapply(1:nrow(d), FUN = function(i) sum(d[i, ] < d0) - 1)
+                                                    
+                                                    mytest <- ks.test(n_neighbors[1:(length(n_neighbors) - 1)],
+                                                                      n_neighbors[length(n_neighbors)])
+                                                    mytest$p.value
+                                                    
+                                                    return(data.frame(dataset = basename(files)[i],
+                                                                      species = sp,
+                                                                      pval = mytest$p.value))
+                                                    
+                                                  }))
+                            
+                            return(out)
+                            
+                          }))
+
+sum(mytests$pval < 0.1) / nrow(mytests)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
