@@ -1179,3 +1179,93 @@ ggsave(file = paste('../plots/fitnessGraph_inset.pdf', sep = ''),
 # write params table for comparison with phi_ij
 write.table(params, file = 'params_eps.txt', quote = F, sep = '\t', row.names = F)
 
+
+
+# heatmaps of effective interactions
+
+sp_names <- vector(mode = 'list', length = 6)
+sp_names[[1]] <- setNames(c('B. cereus', 'B. megaterium', 'B. mojavensis', 'P. polymyxa', 'P. polymyxa\n(B. thuringiensis\nnot in background)', 'P. polymyxa\n(B. thuringiensis\nin background)', 'B. subtilis', 'B. thuringiensis'),
+                          c('C', 'E', 'M', 'P', 'P_0', 'P_1', 'S', 'T'))
+sp_names[[2]] <- setNames(c('P. copri','P. johnsonii','B. vulgatus','B. fragilis','B. ovatus','B. thetaiotaomicron','B. caccae','B. cellulosilyticus','B. uniformis','D. piger','B. longum','B. adolescentis','B. pseudocatenulatum','C. aerofaciens','E. lenta','F. prausnitzii','C. hiranonis','A. caccae','B. hydrogenotrophica','C. asparagiforme','E. rectale','R. intestinalis','C. comes','D. longicatena','D. formicigenerans'),
+                          c('PC','PJ','BV','BF','BO','BT','BC','BY','BU','DP','BL','BA','BP','CA','EL','FP','CH','AC','BH','CG','ER','RI','CC','DL','DF'))
+sp_names[[3]] <- setNames(c('A. carterae','Tetraselmis sp.','D. tertiolecta','Synechococcus sp.','T. lutea'),
+                          c('A','T','D','S','Ti'))
+sp_names[[4]] <- setNames(c('A. millefolium','L. capitata','P. virginianum','S. nutans','L. vulgare','L. cuneata','P. vulgaris','P. pratense'),
+                          c('as.nat','fa.nat','la.nat','po.nat','as.inv','fa.inv','la.inv','po.inv'))
+sp_names[[5]] <- setNames(c('Rhodoferax sp.','Flavobacterium sp.','Sphingoterrabacterium sp.','Burkholderia sp.','S. yanoikuyae','Bacteroidetes sp.'),
+                          c('SL68','SL104','SL106','SL187','SL197','SLWC2'))
+sp_names[[6]] <- setNames(c('Enterobacter sp.', 'Pseudomonas sp. 02', 'Klebsiella sp.', 'Pseudomonas sp. 03', 'Pseudomonas sp. 04', 'Raoultella sp.', 'Pseudomonas sp. 01', 'Pseudomonas sp. 05'),
+                          paste('sp', 1:8, sep = '_'))
+
+datasets <- c("amyl_Sanchez-Gorostiaga2019.csv",
+              "butyrate_Clark2021.csv",
+              "phytoplankton-biomass_Ghedini2022.csv",
+              "plant-biommass_Kuebbing2016_all.csv",
+              "xylose_Langenheder2010.csv",
+              "pyo")
+
+df <- do.call(rbind,
+              lapply(1:length(datasets),
+                     FUN = function(i) {
+                       dfi <- params[grepl(datasets[i], params$dataset), ]
+                       dfi$species_i <- sp_names[[i]][dfi$species_i]
+                       dfi$species_j <- sp_names[[i]][dfi$species_j]
+                       return(dfi)
+                     }))
+df <- df[!grepl('background', df$species_i) & !grepl('background', df$species_j), ]
+
+myplots <- vector(mode = 'list', length = length(unique(df$dataset)))
+rel_heights <- NA
+for (i in 1:length(unique(df$dataset))) {
+  
+  dfi <- df[df$dataset == unique(df$dataset)[i], c('species_i', 'species_j', 'eff_inter')]
+  dfi <- rbind(dfi,
+               data.frame(species_i = unique(dfi$species_i),
+                          species_j = unique(dfi$species_i),
+                          eff_inter = NaN))
+  
+  myplots[[i]] <-
+    ggplot(dfi,
+           aes(x = species_j, y = species_i, fill = eff_inter)) + 
+      geom_tile() +
+      scale_y_discrete(name = 'Focal species\n ',
+                       limits = rev,
+                       expand = c(0, 0)) +
+      scale_x_discrete(expand = c(0, 0)) +
+      scale_fill_gradient2(low = 'firebrick1',
+                           high = 'deepskyblue',
+                           mid = 'white',
+                           midpoint = 0,
+                           na.value = 'gray',
+                           breaks = pretty_breaks(n = 3)) +
+      theme_bw() +
+      theme(aspect.ratio = 1,
+            panel.grid = element_blank(),
+            axis.title = element_text(size = 16),
+            axis.title.x = element_blank(),
+            axis.text = element_text(size = 12,
+                                     face = 'italic'),
+            axis.text.x = element_text(angle = -45,
+                                       hjust = 0),
+            axis.ticks = element_blank()) +
+    guides(fill=guide_colorbar(ticks.colour = NA))
+  
+  rel_heights[i] <- 2*max(nchar(dfi$species_j))/max(nchar(df$species_j)) +
+    length(unique(df$species_i[df$dataset == unique(df$dataset)[i]]))
+  
+}
+
+rel_heights/sum(rel_heights)
+myplot <- plot_grid(myplots[[1]], myplots[[2]], myplots[[3]], myplots[[4]], myplots[[5]], myplots[[6]], myplots[[7]],
+                    ncol = 1,
+                    rel_heights = rel_heights,
+                    align = 'v',
+                    axis = 'r')
+ggsave(myplot,
+       filename = '../plots/effInter_heatmaps_all.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 250,
+       height = 800,
+       units = 'mm',
+       limitsize = F)
