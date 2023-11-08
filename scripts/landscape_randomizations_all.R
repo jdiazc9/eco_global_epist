@@ -7,6 +7,8 @@ library(ggbreak)
 library(tidyr)
 library(plotly)
 
+saveplots <- F # set to TRUE to save generated plots under ./plots directory
+
 # load data sets
 files <- list.files('../data_sets', full.names = T)
 files <- c(files, '../pyoverdine_data/training_set.csv')
@@ -94,7 +96,7 @@ randomizations <- data.frame(rnd_id = numeric(0),
                              intercept = numeric(0),
                              R2 = numeric(0))
 
-for (r in 1:100) { # 1:N randomizations per landscape
+for (r in 1:1000) { # 1:N randomizations per landscape
 
   for (i in 1:length(data)) {
     
@@ -170,13 +172,16 @@ ggplot(randomizations, aes(x = slope, y = R2, color = alpha)) +
         axis.title = element_text(size = 18),
         panel.background = element_blank())
 
-ggsave(filename = '../plots/benchmark_slope_vs_R2.pdf',
+if(saveplots) {
+  ggsave(filename = '../plots/benchmark_slope_vs_R2.pdf',
        device = 'pdf',
        dpi = 600,
        width = 330,
        height = 80,
        units = 'mm',
        limitsize = F)
+}
+
 
 ggplot(randomizations, aes(x = slope, y = intercept, color = alpha)) +
   geom_point(shape = 19,
@@ -207,13 +212,15 @@ ggplot(randomizations, aes(x = slope, y = intercept, color = alpha)) +
         axis.title = element_text(size = 18),
         panel.background = element_blank())
 
-ggsave(filename = '../plots/benchmark_slope_vs_intercept.pdf',
-       device = 'pdf',
-       dpi = 600,
-       width = 300,
-       height = 80,
-       units = 'mm',
-       limitsize = F)
+if(saveplots) {
+  ggsave(filename = '../plots/benchmark_slope_vs_intercept.pdf',
+         device = 'pdf',
+         dpi = 600,
+         width = 300,
+         height = 80,
+         units = 'mm',
+         limitsize = F)
+}
 
 ggplot(randomizations, aes(x = intercept, y = R2, color = alpha)) +
   geom_point(shape = 19,
@@ -244,100 +251,15 @@ ggplot(randomizations, aes(x = intercept, y = R2, color = alpha)) +
         axis.title = element_text(size = 18),
         panel.background = element_blank())
 
-ggsave(filename = '../plots/benchmark_intercept_vs_R2.pdf',
+if(saveplots) {
+  ggsave(filename = '../plots/benchmark_intercept_vs_R2.pdf',
        device = 'pdf',
        dpi = 600,
        width = 330,
        height = 80,
        units = 'mm',
        limitsize = F)
-
-# alternative analysis:
-# keep in mind that FEEs are not independent from one another within dataset
-# R2 and slope are also not independent
-# we consider each null model a realization of a 3N-dimensional vector (N is the number of species, we have a slope, an intercept, and an R2 for each)
-# we run a PCA to see how close the empirical 3N-vector is to the randomized landscapes
-
-splits <- lapply(1:length(data),
-                 FUN = function(i) rbind(randomizations[randomizations$dataset == basename(files)[i], ],
-                                         cbind(rnd_id = 'emp',
-                                               empirical_fees[empirical_fees$dataset == basename(files)[i], ])))
-                               
-splits <- lapply(splits,
-                 FUN = function(df) {
-                   df <- df[, c('rnd_id', 'species', 'slope', 'intercept', 'R2')]
-                   df <- pivot_wider(data = df, 
-                                     id_cols = rnd_id, 
-                                     names_from = species, 
-                                     values_from = c('slope', 'intercept', 'R2'))
-                   df <- as.data.frame(df)
-                   rownames(df) <- df$rnd_id
-                   return(df[, 2:ncol(df)])
-                 })
-
-alpha <- unique(randomizations[, c('rnd_id', 'dataset', 'alpha')])
-
-pc <- do.call(rbind,
-              lapply(1:length(data),
-                     FUN = function(i) {
-                       
-                       df <- splits[[i]]
-                       dfnorm <- scale(df)
-                       
-                       mypca <- prcomp(dfnorm)
-                       pc <- as.data.frame(mypca$x[, 1:2])
-                       pc <- cbind(dataset = basename(files)[i],
-                                   alpha = c(alpha$alpha[alpha$dataset == basename(files)[i]], NA),
-                                   type = c(rep('null_model', nrow(pc)-1), 'empirical'),
-                                   pc)
-                       
-                       return(pc)
-                       
-                     }))
-
-# plot
-pc$dataset <- factor(pc$dataset,
-                     levels = c("training_set.csv",
-                                "plant-biommass_Kuebbing2016_all.csv",
-                                "phytoplankton-biomass_Ghedini2022.csv",
-                                "xylose_Langenheder2010.csv",
-                                "amyl_Sanchez-Gorostiaga2019.csv",
-                                "butyrate_Clark2021.csv"))
-
-ggplot(pc, aes(x = PC1, y = PC2, color = alpha, alpha = type, size = type, shape = type)) +
-  geom_point(stroke = 0) +
-  facet_wrap(~ dataset,
-             nrow = 1) +
-  theme_bw() +
-  scale_x_continuous(name = 'PC 1',
-                     breaks = pretty_breaks(n = 2)) +
-  scale_y_continuous(name = 'PC 2',
-                     breaks = pretty_breaks(n = 2)) +
-  scale_alpha_manual(values = c(1, 0.5)) +
-  scale_shape_manual(values = c(15, 19)) +
-  scale_size_manual(values = c(4, 2)) +
-  scale_color_gradient(low = '#d32f37',
-                       high = '#76d3d6',
-                       na.value = 'black') +
-  theme_bw() +
-  theme(panel.grid = element_blank(),
-        strip.background = element_blank(),
-        strip.text = element_text(face = 'italic',
-                                  size = 10),
-        aspect.ratio = 1,
-        axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
-        panel.background = element_blank())
-
-ggsave(filename = '../plots/benchmark_intercept_vs_R2.pdf',
-       device = 'pdf',
-       dpi = 600,
-       width = 330,
-       height = 80,
-       units = 'mm',
-       limitsize = F)
-
-
+}
 
 
 
@@ -425,13 +347,15 @@ for (i in 1:length(data)) {
     dfisp <- dfi[dfi$species == sp, c('slope', 'intercept', 'R2', 'alpha')]
     
     pplot <- makeProjPlot(dfisp)
-    orca(pplot,
-         file = paste('../plots/projections/',
-                      gsub('\\.csv', '', basename(files)[i]),
-                      '/',
-                      sp_names[[i]][sp],
-                      '.pdf', sep = ''),
-         scale = 2)
+    if(saveplots) {
+      orca(pplot,
+           file = paste('../plots/projections/',
+                        gsub('\\.csv', '', basename(files)[i]),
+                        '/',
+                        sp_names[[i]][sp],
+                        '.pdf', sep = ''),
+           scale = 2)
+    }
     
   }
   
@@ -442,6 +366,39 @@ for (i in 1:length(data)) {
 
 
 ### STATISTICAL TESTS
+# mytests <- do.call(rbind,
+#                    lapply(1:length(files),
+#                           FUN = function(i) {
+#                             
+#                             out <- do.call(rbind,
+#                                            lapply(unique(randomizations$species[randomizations$dataset == basename(files)[i]]),
+#                                                   FUN = function(sp) {
+#                                                     
+#                                                     df <- rbind(randomizations[randomizations$dataset == basename(files)[i] & randomizations$species == sp, c('slope', 'intercept', 'R2')],
+#                                                                 empirical_fees[empirical_fees$dataset == basename(files)[i] & empirical_fees$species == sp, c('slope', 'intercept', 'R2')])
+#                                                     
+#                                                     mytest1 <- ks.test(df$slope[1:(nrow(df)-1)],
+#                                                                        df$slope[nrow(df)])
+#                                                     mytest2 <- ks.test(df$intercept[1:(nrow(df)-1)],
+#                                                                        df$intercept[nrow(df)])
+#                                                     mytest3 <- ks.test(df$R2[1:(nrow(df)-1)],
+#                                                                        df$R2[nrow(df)])
+#                                                     
+#                                                     return(data.frame(dataset = basename(files)[i],
+#                                                                       species = sp,
+#                                                                       pval_slope = mytest1$p.value,
+#                                                                       pval_intercept = mytest2$p.value,
+#                                                                       pval_R2 = mytest3$p.value))
+#                                                     
+#                                                   }))
+#                             
+#                             return(out)
+#                             
+#                           }))
+# 
+# pt <- 0.01
+# sum(mytests$pval_slope < pt | mytests$pval_intercept < pt | mytests$pval_R2 < pt) / nrow(mytests)
+
 mytests <- do.call(rbind,
                    lapply(1:length(files),
                           FUN = function(i) {
@@ -452,18 +409,45 @@ mytests <- do.call(rbind,
                                                     
                                                     df <- rbind(randomizations[randomizations$dataset == basename(files)[i] & randomizations$species == sp, c('slope', 'intercept', 'R2')],
                                                                 empirical_fees[empirical_fees$dataset == basename(files)[i] & empirical_fees$species == sp, c('slope', 'intercept', 'R2')])
-                                                    d <- as.matrix(dist(as.matrix(scale(df))))
-                                                    d <- as.matrix(dist(as.matrix(scale(df))))
-                                                    d0 <- min(d[nrow(d), 1:(ncol(d) - 1)])
-                                                    n_neighbors <- sapply(1:nrow(d), FUN = function(i) sum(d[i, ] < d0) - 1)
+                                                    df <- as.data.frame(scale(df))
                                                     
-                                                    mytest <- ks.test(n_neighbors[1:(length(n_neighbors) - 1)],
-                                                                      n_neighbors[length(n_neighbors)])
-                                                    mytest$p.value
+                                                    d <- 0.1 # define interval for choosing null models to compare to
+                                                    
+                                                    # slope test
+                                                    dfi <- df[df$intercept > df$intercept[nrow(df)] - d & df$intercept < df$intercept[nrow(df)] + d &
+                                                                df$R2 > df$R2[nrow(df)] - d & df$R2 < df$R2[nrow(df)] + d, ]
+                                                    if(nrow(dfi) == 1) {
+                                                      pval_slope <- 1/nrow(df) # if no null models yield comparable values, the probability of the empirical FEE resulting from a null model is lower than 1/N (we set it to 1/N)
+                                                    } else {
+                                                      mytest <- ks.test(dfi$slope[1:(nrow(dfi) - 1)], y = dfi$slope[nrow(dfi)])
+                                                      pval_slope <- mytest$p.value
+                                                    }
+                                                    
+                                                    # intercept test
+                                                    dfi <- df[df$slope > df$slope[nrow(df)] - d & df$slope < df$slope[nrow(df)] + d &
+                                                                df$R2 > df$R2[nrow(df)] - d & df$R2 < df$R2[nrow(df)] + d, ]
+                                                    if(nrow(dfi) == 1) {
+                                                      pval_intercept <- 1/nrow(df) # same as before
+                                                    } else {
+                                                      mytest <- ks.test(dfi$intercept[1:(nrow(dfi) - 1)], y = dfi$intercept[nrow(dfi)])
+                                                      pval_intercept <- mytest$p.value
+                                                    }
+                                                    
+                                                    # R2 test
+                                                    dfi <- df[df$slope > df$slope[nrow(df)] - d & df$slope < df$slope[nrow(df)] + d &
+                                                                df$intercept > df$intercept[nrow(df)] - d & df$intercept < df$intercept[nrow(df)] + d, ]
+                                                    if(nrow(dfi) == 1) {
+                                                      pval_R2 <- 1/nrow(df) # same as before
+                                                    } else {
+                                                      mytest <- ks.test(dfi$R2[1:(nrow(dfi) - 1)], y = dfi$R2[nrow(dfi)])
+                                                      pval_R2 <- mytest$p.value
+                                                    }
                                                     
                                                     return(data.frame(dataset = basename(files)[i],
                                                                       species = sp,
-                                                                      pval = mytest$p.value))
+                                                                      pval_slope = pval_slope,
+                                                                      pval_intercept = pval_intercept,
+                                                                      pval_R2 = pval_R2))
                                                     
                                                   }))
                             
@@ -471,14 +455,8 @@ mytests <- do.call(rbind,
                             
                           }))
 
-sum(mytests$pval < 0.1) / nrow(mytests)
-
-
-
-
-
-
-
+pt <- 0.01
+sum(mytests$pval_slope < pt | mytests$pval_intercept < pt | mytests$pval_R2 < pt) / nrow(mytests)
 
 
 
