@@ -606,7 +606,14 @@ intercept_cmp <- merge(fees[, c('dataset', 'species', 'intercept')],
                        suffixes = c('', '_fvsf'))
 
 ggplot(slopes_cmp, aes(x = slope, y = slope_fvsf)) +
-  geom_point()
+  geom_abline(slope = 1, 
+              intercept = 1,
+              color = 'gray') +
+  geom_point() +
+  geom_blank(aes(x = slope_fvsf, y = slope)) +
+  theme_bw() +
+  theme(aspect.ratio = 1,
+        panel.grid = element_blank())
 
 ggplot(intercept_cmp, aes(x = intercept, y = intercept_fvsf)) +
   geom_point()
