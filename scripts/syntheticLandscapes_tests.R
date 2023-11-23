@@ -6,7 +6,15 @@ N <- 8 # number of species
 comms <- makeComms(N)
 
 # tune weight of higher-order interactions
+scale_coeffs <- function(coeff_order, mean_scale = 1, sd_scale = 2) exp(-(coeff_order - mean_scale)^2/sd_scale^2)
 scale_coeffs <- function(coeff_order, mean_scale = 1, sd_scale = 2) 0.2 + (1 - 0.2)*exp(-(coeff_order - mean_scale)^2/sd_scale^2)
+scale_coeffs <- function(coeff_order, mean_scale = 1, sd_scale = 2) sapply(coeff_order,
+                                                                           FUN = function(x) {
+                                                                             
+                                                                             if (x <= 1) return(1)
+                                                                             else return(0.2 + (1 - 0.2)*2^(-1*(x - 1)/(sd_scale)))
+                                                                             
+                                                                           })
 
 # interaction coefficients plots (wrapper function)
 makeCoeffPlots <- function(sd_scale = 2) {
@@ -160,42 +168,42 @@ if (length(params_file)) {
     # evaluate quality of predictions (stitching method) in synthetic landscape
     po <- evaluatePredictions_mult(synthLandscape)
     mylm <- lm(fun_true ~ fun_predicted, data = po)
-    #po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
-    #mylm_ext <- lm(fun_true ~ fun_predicted, data = po_extremes)
+    po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
+    mylm_ext <- lm(fun_true ~ fun_predicted, data = po_extremes)
     
     params$R2_stitching[p] <- summary(mylm)$r.squared
     params$R2.identity_stitching[p] <- 1 - sum((po$fun_true - po$fun_predicted)^2)/sum((po$fun_true - mean(po$fun_true))^2)
-    #params$relError.mean_topbot10_stitching[p] <- mean(abs((po_extremes$fun_predicted - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$relError.sd_topbot10_stitching[p] <- sd(abs((po_extremes$fun_predicted - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$R2_topbot10_stitching[p] = summary(mylm_ext)$r.squared
-    #params$R2.identity_topbot10_stitching[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_predicted)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
+    params$relError.mean_topbot10_stitching[p] <- mean(abs((po_extremes$fun_predicted - po_extremes$fun_true) / po_extremes$fun_true))
+    params$relError.sd_topbot10_stitching[p] <- sd(abs((po_extremes$fun_predicted - po_extremes$fun_true) / po_extremes$fun_true))
+    params$R2_topbot10_stitching[p] = summary(mylm_ext)$r.squared
+    params$R2.identity_topbot10_stitching[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_predicted)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
     
     # evaluate quality of predictions by 1st and 2nd order regressions
     po <- get_all_loo_fits_mult(synthLandscape)
     
     # 1st order
     mylm <- lm(fun_true ~ fun_pred_1st, data = po)
-    #po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
-    #mylm_ext <- lm(fun_true ~ fun_pred_1st, data = po_extremes)
+    po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
+    mylm_ext <- lm(fun_true ~ fun_pred_1st, data = po_extremes)
     
     params$R2_reg1[p] <- summary(mylm)$r.squared
     params$R2.identity_reg1[p] <- 1 - sum((po$fun_true - po$fun_pred_1st)^2)/sum((po$fun_true - mean(po$fun_true))^2)
-    #params$relError.mean_topbot10_reg1[p] <- mean(abs((po_extremes$fun_pred_1st - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$relError.sd_topbot10_reg1[p] <- sd(abs((po_extremes$fun_pred_1st - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$R2_topbot10_reg1[p] = summary(mylm_ext)$r.squared
-    #params$R2.identity_topbot10_reg1[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_pred_1st)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
+    params$relError.mean_topbot10_reg1[p] <- mean(abs((po_extremes$fun_pred_1st - po_extremes$fun_true) / po_extremes$fun_true))
+    params$relError.sd_topbot10_reg1[p] <- sd(abs((po_extremes$fun_pred_1st - po_extremes$fun_true) / po_extremes$fun_true))
+    params$R2_topbot10_reg1[p] = summary(mylm_ext)$r.squared
+    params$R2.identity_topbot10_reg1[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_pred_1st)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
     
     # 2nd order
     mylm <- lm(fun_true ~ fun_pred_2nd, data = po)
-    #po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
-    #mylm_ext <- lm(fun_true ~ fun_pred_2nd, data = po_extremes)
+    po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
+    mylm_ext <- lm(fun_true ~ fun_pred_2nd, data = po_extremes)
     
     params$R2_reg2[p] <- summary(mylm)$r.squared
     params$R2.identity_reg2[p] <- 1 - sum((po$fun_true - po$fun_pred_2nd)^2)/sum((po$fun_true - mean(po$fun_true))^2)
-    #params$relError.mean_topbot10_reg2[p] <- mean(abs((po_extremes$fun_pred_2nd - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$relError.sd_topbot10_reg2[p] <- sd(abs((po_extremes$fun_pred_2nd - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$R2_topbot10_reg2[p] = summary(mylm_ext)$r.squared
-    #params$R2.identity_topbot10_reg2[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_pred_2nd)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
+    params$relError.mean_topbot10_reg2[p] <- mean(abs((po_extremes$fun_pred_2nd - po_extremes$fun_true) / po_extremes$fun_true))
+    params$relError.sd_topbot10_reg2[p] <- sd(abs((po_extremes$fun_pred_2nd - po_extremes$fun_true) / po_extremes$fun_true))
+    params$R2_topbot10_reg2[p] = summary(mylm_ext)$r.squared
+    params$R2.identity_topbot10_reg2[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_pred_2nd)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
     
     # save
     write.table(params[p, , drop = F],
@@ -271,7 +279,7 @@ emp_ruggedness$dataset <- factor(emp_ruggedness$dataset, levels = c('Above-groun
 
 
 # variance by order plots
-focal_sd_scale <- unique(params$sd_scale)[c(F, T, F, F, T, F, F, T, F, F, T, F)]
+focal_sd_scale <- unique(params$sd_scale) #[c(F, T, F, F, T, F, F, T, F, F, T, F)]
 rel_var <- do.call(rbind,
                    lapply(focal_sd_scale,
                           FUN = function(x) {
@@ -371,7 +379,7 @@ ggsave(filename = '../plots/synthLandscapes/R2_vs_structure_heatmaps.pdf',
 
 
 
-
+# R2 vs ruggedness
 tst <- gather(params[, c('rs',
                          'R2.identity_stitching',
                          'R2.identity_reg1',

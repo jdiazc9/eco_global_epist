@@ -27,7 +27,9 @@ data <- data[1:6]
 # wrapper function: fit self-consistent model
 getSCfits <- function(df) {
   
-  params0 <- c(rep(0, ncol(df) - 1), 1)
+  fees <- makeFEEs(makeGEdata(matrix2string(df)))
+  
+  params0 <- c(fees$b, mean(fees$a/fees$b, na.rm = T))
   gedf <- makeGEdata(matrix2string(df))
   
   # error function to minimize
@@ -66,12 +68,14 @@ predictF_sc <- function(target_community, scfits, F0 = 0) {
   
 }
 
-# get predictions vs observations
+# get self-consistent FEEs
 focal_dataset <- 6
 
 df <- data[[focal_dataset]]
 gedf <- makeGEdata(matrix2string(df))
 scfits <- getSCfits(df)
+
+# get predictions vs observations
 po <- do.call(rbind,
               lapply(2:nrow(df),
                      FUN = function(i) {
@@ -91,6 +95,7 @@ po <- do.call(rbind,
                        
                      }))
 mylm <- lm(fun_true ~ fun_predicted, data = po)
+R2_identity <- 1 - sum((po$fun_true - po$fun_predicted)^2)/sum((po$fun_true - mean(po$fun_true))^2)
 
 ggplot(gedf,
        aes(x = background_f, y = d_f)) +
@@ -118,6 +123,14 @@ ggplot(gedf,
         legend.position = 'none') +
   annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
   annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
+
+ggsave(filename = '../plots/self_consistent_models/scFEEs.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 125,
+       height = 75,
+       units = 'mm',
+       limitsize = F)
 
 # predicted vs observed
 ggplot(po, aes(x = fun_predicted, y = fun_true)) +
