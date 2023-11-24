@@ -35,7 +35,7 @@ get_folds <- function(df, unique_communities, n_folds = 10){
 # get leave-one-out fit for a specified dataset #### 
 #####################################################
 
-get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
+get_all_loo_fits <- function(df, mode = 'full', reg_type = 'lasso', v = FALSE){
   
   N <- ncol(df) -1 
   
@@ -109,7 +109,7 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
     unique_communities_train <- unique_communities[-which(unique_communities == exp)]
     fold_ids <- get_folds(df[-exp_inds,], unique_communities_train, n_folds = 10)
     
-    cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids) 
+    cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids) #, alpha = 0) 
     
     #get out of fit cv 
     y_test <- as.matrix(df[exp_inds[1],]$`function`)
@@ -121,6 +121,32 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
     loo_res_first_order <- rbind(loo_res_first_order, tmp)
   }
   
+  
+  #################################
+  # first order linear regression #
+  #################################
+  ridge_loo_res_first_order <- tibble()
+  for (exp in unique_communities){
+    exp_inds <- which(df$community == exp)
+    #set up regression
+    y <- as.matrix(df[-exp_inds,]$`function`)   
+    f <- as.formula(y ~ .)
+    x <- model.matrix(f, df[-exp_inds,] %>% dplyr::select(all_of(all_species)))
+    
+    unique_communities_train <- unique_communities[-which(unique_communities == exp)]
+    fold_ids <- get_folds(df[-exp_inds,], unique_communities_train, n_folds = 10)
+    
+    cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids, alpha = 0) 
+    
+    #get out of fit cv 
+    y_test <- as.matrix(df[exp_inds[1],]$`function`)
+    f_test <- as.formula(y_test ~ .)
+    x_test <- model.matrix(f_test, df[exp_inds[1],] %>% dplyr::select(all_of(all_species)))
+    y_pred_cv <- predict(cv_fit, x_test, s = "lambda.1se" )
+    
+    tmp <- list(obs = df[exp_inds[1],]$mean_fitness, pred = y_pred_cv)
+    ridge_loo_res_first_order <- rbind(ridge_loo_res_first_order, tmp)
+  }
   
   #################################
   # second order linear regression #
@@ -142,7 +168,7 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
     unique_communities_train <- unique_communities[-which(unique_communities == exp)]
     fold_ids <- get_folds(df[-exp_inds,], unique_communities_train, n_folds = 10)
     
-    cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids) 
+    cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids) #, alpha = 0) 
     
     #get out of fit cv 
     y_test <- as.matrix(df[exp_inds[1],]$`function`)
@@ -154,13 +180,52 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
     loo_res_second_order <- rbind(loo_res_second_order, tmp)
   }
   
+  
+  #################################
+  # ridge second order linear regression #
+  #################################
+  count <- 1
+  ridge_loo_res_second_order <- tibble()
+  for (exp in unique_communities){
+    if (v){
+      print(paste0(count , ' out of ', length(unique_communities)))
+      count <- count + 1
+    }
+    
+    exp_inds <- which(df$community == exp)
+    #set up regression
+    y <- as.matrix(df[-exp_inds,]$`function`)   
+    f <- as.formula(y ~ .*.)
+    x <- model.matrix(f, df[-exp_inds,] %>% dplyr::select(all_of(all_species)))
+    
+    unique_communities_train <- unique_communities[-which(unique_communities == exp)]
+    fold_ids <- get_folds(df[-exp_inds,], unique_communities_train, n_folds = 10)
+    
+    cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids, alpha = 0) 
+    
+    #get out of fit cv 
+    y_test <- as.matrix(df[exp_inds[1],]$`function`)
+    f_test <- as.formula(y_test ~ .*.)
+    x_test <- model.matrix(f_test, df[exp_inds[1],] %>% dplyr::select(all_of(all_species)))
+    y_pred_cv <- predict(cv_fit, x_test, s = "lambda.1se" )
+    
+    tmp <- list(obs = df[exp_inds[1],]$mean_fitness, pred = y_pred_cv)
+    ridge_loo_res_second_order <- rbind(ridge_loo_res_second_order, tmp)
+  }
+  
   r2 <- cor(loo_res$obs, loo_res$pred)^2
   r2_first_order <- cor(loo_res_first_order$obs, loo_res_first_order$pred)^2
   r2_second_order <- cor(loo_res_second_order$obs, loo_res_second_order$pred)^2
+  r2_ridge_first_order <- cor(ridge_loo_res_first_order$obs, ridge_loo_res_first_order$pred)^2
+  r2_ridge_second_order <- cor(ridge_loo_res_second_order$obs, ridge_loo_res_second_order$pred)^2
   
   return(list(r2 = r2, r2_first_order = r2_first_order, r2_second_order = r2_second_order, 
+              r2_ridge_first_order = r2_ridge_first_order,
+              r2_ridge_second_order = r2_ridge_second_order,
               loo_res = loo_res, loo_res_first_order = loo_res_first_order,
-              loo_res_second_order = loo_res_second_order))
+              loo_res_second_order = loo_res_second_order,
+              ridge_loo_res_first_order = ridge_loo_res_first_order, 
+              ridge_loo_res_second_order = ridge_loo_res_second_order ))
 }
 
 
@@ -179,13 +244,13 @@ all_datasets <- all_datasets[!grepl('Clark', all_datasets)]
 
 #kuebbing flag 
 sub_dataset1 <- 'TRUE'
-
 res_full <- tibble()
+
 for (dataset_id in 1:length(all_datasets)){
   df <- read_csv(all_datasets[dataset_id], show_col_types = F)
   
   name <- str_remove(basename(all_datasets[dataset_id]), '.csv')
-
+  
   mode <- 'full'
   
   if (grepl('training_set', name)){
@@ -229,7 +294,18 @@ for (dataset_id in 1:length(all_datasets)){
                                      method = 'second_order',
                                      pred = loo_fits$loo_res_second_order$pred,
                                      obs = loo_fits$loo_res_second_order$obs,
-                                     sq_err = abs(loo_fits$loo_res_second_order$obs - loo_fits$loo_res_second_order$pred)/mean(loo_fits$loo_res_second_order$obs))))
+                                     sq_err = abs(loo_fits$loo_res_second_order$obs - loo_fits$loo_res_second_order$pred)/mean(loo_fits$loo_res_second_order$obs)),
+                          data.frame(dataset = name,
+                                     method = 'first_order_ridge',
+                                     pred = loo_fits$ridge_loo_res_first_order$pred,
+                                     obs = loo_fits$ridge_loo_res_first_order$obs,
+                                     sq_err = abs(loo_fits$ridge_loo_res_first_order$obs - loo_fits$ridge_loo_res_first_order$pred)/mean(loo_fits$ridge_loo_res_first_order$obs)),
+                          data.frame(dataset = name,
+                                    method = 'second_order_ridge',
+                                    pred = loo_fits$ridge_loo_res_second_order$pred,
+                                    obs = loo_fits$ridge_loo_res_second_order$obs,
+                                    sq_err = abs(loo_fits$ridge_loo_res_second_order$obs - loo_fits$ridge_loo_res_second_order$pred)/mean(loo_fits$ridge_loo_res_second_order$obs))))
+
   
 }
 
@@ -253,16 +329,16 @@ res_full$dataset <- factor(res_full$dataset,
                                       'Bacterial\nxylose oxidation',
                                       'Bacterial\nstarch hydrolysis'))
 
-scales_limits_pred <- rbind(aggregate(formula = pred~method+dataset,
+scales_limits_pred <- rbind(aggregate(pred~method+dataset,
                                       data = res_full,
                                       FUN = max),
-                            aggregate(formula = pred~method+dataset,
+                            aggregate(pred~method+dataset,
                                       data = res_full,
                                       FUN = min))
-scales_limits_obs <- rbind(aggregate(formula = obs~method+dataset,
+scales_limits_obs <- rbind(aggregate(obs~method+dataset,
                                      data = res_full,
                                      FUN = max),
-                           aggregate(formula = obs~method+dataset,
+                           aggregate(obs~method+dataset,
                                      data = res_full,
                                      FUN = min))
 
@@ -271,10 +347,10 @@ colnames(scales_limits_pred) <- c('method', 'dataset', 'f')
 
 scales_limits <- rbind(scales_limits_pred, scales_limits_obs)
 
-scales_limits <- rbind(aggregate(formula = f~dataset,
+scales_limits <- rbind(aggregate( f~dataset,
                                  data = scales_limits,
                                  FUN = max),
-                       aggregate(formula = f~dataset,
+                       aggregate(f~dataset,
                                  data = scales_limits,
                                  FUN = min))
 
@@ -288,7 +364,10 @@ scales_limits$obs <- scales_limits$f
 scales_limits <- scales_limits[, c('method', 'dataset', 'pred', 'obs')]
 scales_limits$invasives <- FALSE
 
-ggplot(res_full, aes(x = obs, y = pred, shape = invasives)) +
+# plot to make predicted versus observed, 
+# regression models use lasso regularization only 
+res_full %>% filter(!method %in% c('first_order_ridge', 'second_order_ridge')) %>% 
+  ggplot(aes(x = obs, y = pred, shape = invasives)) +
   geom_abline(slope = 1,
               intercept = 0,
               color = '#d1d3d4') +
@@ -364,7 +443,9 @@ rsq$dataset <- factor(rsq$dataset,
 
 rsq$natives <- !rsq$invasives
 
-ggplot(rsq, aes(x = method, y = r2, fill = interaction(method, natives), color = interaction(method, natives))) +
+# old plot
+rsq %>% filter(!method %in% c('first_order_ridge', 'second_order_ridge')) %>% 
+                 ggplot(aes(x = method, y = r2, fill = interaction(method, natives), color = interaction(method, natives))) +
   geom_bar(stat = 'identity',
            width = 0.6,
            position = 'dodge') +
@@ -383,8 +464,8 @@ ggplot(rsq, aes(x = method, y = r2, fill = interaction(method, natives), color =
         strip.text = element_text(face = 'italic',
                                   size = 10),
         aspect.ratio = 1.6,
-        axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
+        #axis.text = element_text(size = 16),
+        #axis.title = element_text(size = 18),
         axis.title.x = element_blank(),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
@@ -404,11 +485,47 @@ ggsave(filename = '../plots/stitching_vs_regression_R2.pdf',
        units = 'mm',
        limitsize = F)
 
+### new plot to compare ridge vs. lasso ### 
+
+rsq %>% filter(!method %in% c('stitching')) %>% 
+  ggplot(aes(x = method, y = r2, fill = interaction(method, natives), color = interaction(method, natives))) +
+  geom_bar(stat = 'identity',
+           width = 0.6,
+           position = 'dodge') +
+  facet_wrap(~dataset,
+             nrow = 1) +
+  scale_y_continuous(name = 'R2',
+                     limits = c(0, 1),
+                     breaks = pretty_breaks(n = 4)) +
+  scale_color_manual(values = c('#99d7dc', '#176766', '#b33a3b', 'darkred',
+                                'white', 'white', 'white', 'white')) +
+  scale_fill_manual(values = c('white', 'white', 'white', 'white',
+                               '#99d7dc', '#176766', '#b33a3b', 'darkred')) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = 'italic',
+                                  size = 10),
+        aspect.ratio = 1.6,
+        #axis.text = element_text(size = 16),
+        #axis.title = element_text(size = 18),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position = 'bottom') +
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5) +
+  annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
+  annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
+
+
 # top and bottom-performing communities
 threshold <- 0.1
-top_bottom <- do.call(data.frame, aggregate(formula = obs ~ inter,
-                                  data = res_full,
-                                  FUN = function(x) quantile(x, probs = c(threshold, 1 - threshold))))
+top_bottom <- do.call(data.frame, aggregate(obs ~ inter,
+                                            data = res_full,
+                                            FUN = function(x) quantile(x, probs = c(threshold, 1 - threshold))))
 colnames(top_bottom)[2:3] <- c('lower_bound', 'upper_bound')
 which_top_bottom <- sapply(1:nrow(res_full),
                            FUN = function(i) {
@@ -502,9 +619,20 @@ ggsave(filename = '../plots/stitching_vs_regression_top_bottom_absErr.pdf',
 
 
 
+test <- rbind(cbind(ridge_rsq, type = 'ridge') ,cbind(rsq, type = 'lasso'))
+#test %>% pivot_longer(r2) %>% 
+  
+test %>% ggplot(aes(x = method, y = r2, fill = interaction(method, type))) + geom_boxplot(position = 'dodge') + 
+  geom_bar(stat = 'identity',
+             width = 0.6,  position = 'dodge') +
+  facet_wrap(~dataset, nrow = 1) + # geom_point() + facet_wrap(~method) + 
+theme_classic()
 
 
-
+test %>% filter(method == "second_order") %>% 
+  ggplot(aes(x = dataset, y = r2, fill = type)) + 
+  geom_bar(stat = 'identity',  position = 'dodge') + 
+  theme_classic()
 
 
 
