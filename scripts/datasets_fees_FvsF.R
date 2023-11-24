@@ -3,7 +3,6 @@ source('./ecoFunctions.R')
 library(scales)
 library(gridExtra)
 library(cowplot)
-library(ggbreak)
 
 # load data sets
 files <- list.files('../data_sets', full.names = T)
@@ -75,6 +74,21 @@ ge_data$knock_in <- factor(ge_data$knock_in,
                                       "Klebsiella sp.")) # ordered from higher to lower function in monoculture
 ge_data_pyo <- ge_data
 
+# fit via total least squares regression
+fees_tls <- do.call(rbind,
+                    lapply(unique(ge_data_pyo$knock_in),
+                           FUN = function(sp) {
+                             
+                             mytls <- prcomp(ge_data_pyo[ge_data_pyo$knock_in == sp, c('background_f.mean', 'knockin_f.mean')])$rotation
+                             slope <- mytls[2, 1]/mytls[1, 1]
+                             intercept <- mean(ge_data_pyo$knockin_f.mean[ge_data_pyo$knock_in == sp]) - slope*mean(ge_data_pyo$background_f.mean[ge_data_pyo$knock_in == sp])
+                             
+                             return(data.frame(knock_in = sp,
+                                               slope = slope,
+                                               intercept = intercept))
+                             
+                           }))
+
 # plot FEEs (in F vs. F format)
 ggplot(ge_data_pyo, aes(x = background_f.mean, xmin = background_f.mean - background_f.sd, xmax = background_f.mean + background_f.sd,
                     y = knockin_f.mean, ymin = knockin_f.mean - knockin_f.sd, ymax = knockin_f.mean + knockin_f.sd,
@@ -86,15 +100,27 @@ ggplot(ge_data_pyo, aes(x = background_f.mean, xmin = background_f.mean - backgr
              shape = 1) +
   geom_errorbar(alpha = 0.25) +
   geom_errorbarh(alpha = 0.25) +
-  geom_smooth(method = 'lm',
-              formula = y~x,
-              color = 'firebrick1',
-              se = F,
-              fullrange = F) +
+  # geom_smooth(method = 'lm',
+  #             formula = y~x,
+  #             color = 'firebrick1',
+  #             se = F,
+  #             fullrange = F) +
+  geom_abline(data = fees_tls,
+              aes(slope = slope,
+                  intercept = intercept,
+                  color = slope), size = 1) +
   scale_x_continuous(breaks = pretty_breaks(n = 3),
                      name = 'Function of ecological background [uM]') +
   scale_y_continuous(breaks = pretty_breaks(n = 3),
                      name = 'Function with focal species [uM]') +
+  scale_color_gradientn(colors = c('firebrick1',
+                                   'firebrick1',
+                                   'black',
+                                   'deepskyblue',
+                                   'deepskyblue'),
+                        breaks = 1 + c(-0.8, -0.5, 0, 0.5, 0.8),
+                        limits = 1 + c(-0.8, 0.8),
+                        na.value = 'deepskyblue') +
   facet_wrap(~knock_in,
              nrow = 2) +
   theme_bw() +
@@ -129,6 +155,20 @@ ge_data$knock_in <- factor(ge_data$knock_in,
 ge_data$knockin_f <- ge_data$background_f + ge_data$d_f
 ge_data_khan <- ge_data
 
+fees_tls <- do.call(rbind,
+                    lapply(unique(ge_data_khan$knock_in),
+                           FUN = function(sp) {
+                             
+                             mytls <- prcomp(ge_data_khan[ge_data_khan$knock_in == sp, c('background_f', 'knockin_f')])$rotation
+                             slope <- mytls[2, 1]/mytls[1, 1]
+                             intercept <- mean(ge_data_khan$knockin_f[ge_data_khan$knock_in == sp]) - slope*mean(ge_data_khan$background_f[ge_data_khan$knock_in == sp])
+                             
+                             return(data.frame(knock_in = sp,
+                                               slope = slope,
+                                               intercept = intercept))
+                             
+                           }))
+
 ggplot(ge_data_khan, aes(x = background_f, y = knockin_f, group = knock_in)) +
   geom_abline(slope = 1, intercept = 0,
               color = '#d1d3d4') +
@@ -136,11 +176,23 @@ ggplot(ge_data_khan, aes(x = background_f, y = knockin_f, group = knock_in)) +
   geom_point(color = 'black',
              cex = 3,
              shape = 1) +
-  geom_smooth(method = 'lm',
-              formula = y~x,
-              color = 'firebrick1',
-              se = F,
-              fullrange = F) +
+  # geom_smooth(method = 'lm',
+  #             formula = y~x,
+  #             color = 'firebrick1',
+  #             se = F,
+  #             fullrange = F) +
+  geom_abline(data = fees_tls,
+              aes(slope = slope,
+                  intercept = intercept,
+                  color = slope), size = 1) +
+  scale_color_gradientn(colors = c('firebrick1',
+                                   'firebrick1',
+                                   'black',
+                                   'deepskyblue',
+                                   'deepskyblue'),
+                        breaks = 1 + c(-0.8, -0.5, 0, 0.5, 0.8),
+                        limits = 1 + c(-0.8, 0.8),
+                        na.value = 'deepskyblue') +
   scale_x_continuous(breaks = pretty_breaks(n = 2),
                      name = expression(paste('Relative fitness of genetic background, ', italic(f)[B], sep = ''))) +
   scale_y_continuous(breaks = pretty_breaks(n = 2),
@@ -198,13 +250,23 @@ for (i in 1:5) {
   
   if (any(ge_data$knock_in == 'P')) ge_data$group[ge_data$knock_in == 'P' & grepl('T', ge_data$background)] <- 'P.T'
   
-  # make linear fits and get slopes
-  slopes <- sapply(unique(ge_data$group),
-                   FUN = function(g) as.numeric(lm(ge_data$knockin_f[ge_data$group == g] ~
-                                                     ge_data$background_f[ge_data$group == g])$coefficients[2]))
-  slopes[slopes > 1.8] <- 1.8 # 'shrink' slope values from the tails of the distribution to avoid NAs in color scale
-  slopes[slopes < 0.2] <- 0.2
-  ge_data$slope <- slopes[ge_data$group]
+  # make total-least squares fits and get slopes
+  fees_tls <- do.call(rbind,
+                      lapply(unique(ge_data$group),
+                             FUN = function(sp) {
+                               
+                               mytls <- prcomp(ge_data[ge_data$group == sp, c('background_f', 'knockin_f')])$rotation
+                               slope <- mytls[2, 1]/mytls[1, 1]
+                               intercept <- mean(ge_data$knockin_f[ge_data$group == sp]) - slope*mean(ge_data$background_f[ge_data$group == sp])
+                               
+                               return(data.frame(knock_in = sp,
+                                                 slope = slope,
+                                                 intercept = intercept))
+                               
+                             }))
+  fees_tls$color <- fees_tls$slope
+  fees_tls$color[fees_tls$color > 1.8] <- 1.8 # 'shrink' color values from the tails of the distribution to avoid NAs in color scale
+  fees_tls$color[fees_tls$color < 0.2] <- 0.2
   
   # manually set axis limits for clear visualization
   dx <- (max(ge_data$background_f) - min(ge_data$background_f))/20
@@ -215,6 +277,8 @@ for (i in 1:5) {
   
   # full species names
   ge_data$knock_in <- sp_names[[i]][ge_data$knock_in]
+  fees_tls$knock_in <- setNames(unique(ge_data[, c('knock_in', 'group')])$knock_in,
+                                unique(ge_data[, c('knock_in', 'group')])$group)[fees_tls$knock_in]
   
   # if there are less than 25 species (maximum across our data sets), add 'ghost' panels to mantain axis proportions
   if (length(unique(ge_data$knock_in)) < 25) {
@@ -227,15 +291,15 @@ for (i in 1:5) {
                                 background_f = NA,
                                 knockin_f = NA,
                                 d_f = NA,
-                                group = NA,
-                                slope = NA))
+                                group = NA))
     
   }
   ge_data$knock_in <- factor(ge_data$knock_in, levels = unique(ge_data$knock_in))
+  fees_tls$knock_in <- factor(fees_tls$knock_in, levels = levels(ge_data$knock_in))
   
   # plot
   g[[i]] <- 
-    ggplot(ge_data, aes(x = background_f, y = knockin_f, group = group, color = slope)) +
+    ggplot(ge_data, aes(x = background_f, y = knockin_f, group = group)) +
     geom_abline(slope = 1,
                 intercept = 0,
                 color = 'gray') +
@@ -243,10 +307,14 @@ for (i in 1:5) {
     geom_point(color = 'black',
                shape = 1,
                cex = 2) +
-    geom_smooth(method = 'lm',
-                formula = y~x,
-                se = FALSE,
-                fullrange = FALSE) +
+    # geom_smooth(method = 'lm',
+    #             formula = y~x,
+    #             se = FALSE,
+    #             fullrange = FALSE) +
+    geom_abline(data = fees_tls,
+                aes(slope = slope,
+                    intercept = intercept,
+                    color = color), size = 1) +
     scale_x_continuous(name = '',
                        breaks = pretty_breaks(n = 2)) +
     scale_y_continuous(name = 'F (knockin)',
@@ -260,7 +328,7 @@ for (i in 1:5) {
                                      'deepskyblue'),
                           breaks = 1 + c(-0.8, -0.5, 0, 0.5, 0.8),
                           limits = 1 + c(-0.8, 0.8),
-                          na.value = 'deepskyblue') +
+                          na.value = 'yellow') +
     theme_bw() +
     theme(panel.grid = element_blank(),
           strip.background = element_blank(),
@@ -307,11 +375,31 @@ for (i in 1:6) {
   lfits <- sapply(unique(ge_data$group),
                   FUN = function(grp) summary(lm(formula = knockin_f ~ background_f,
                                                  data = ge_data[ge_data$group == grp, ]))$r.squared)
+  fees_tls <- do.call(rbind,
+                      lapply(unique(ge_data$group),
+                             FUN = function(sp) {
+                               
+                               mytls <- prcomp(ge_data[ge_data$group == sp, c('background_f', 'knockin_f')])$rotation
+                               slope <- mytls[2, 1]/mytls[1, 1]
+                               intercept <- mean(ge_data$knockin_f[ge_data$group == sp]) - slope*mean(ge_data$background_f[ge_data$group == sp])
+                               
+                               x <- ge_data$background_f[ge_data$group == sp]
+                               y <- ge_data$knockin_f[ge_data$group == sp]
+                               yfit <- intercept + slope*x
+                               R2 <- 1 - sum((y - yfit)^2)/sum((y - mean(y))^2)
+                               R2[R2 < 0] <- 0 # if total-least-squares regression model fails, its R2 is set to zero
+                               
+                               return(data.frame(knock_in = sp,
+                                                 slope = slope,
+                                                 intercept = intercept,
+                                                 R2 = R2))
+                               
+                             }))
   
   sigma <- rbind(sigma,
                  data.frame(dataset = basename(files)[i],
-                            species = names(lfits),
-                            R2_FvsF = as.numeric(lfits)))
+                            species = fees_tls$knock_in,
+                            R2_FvsF = fees_tls$R2))
   
 }
 
@@ -395,28 +483,36 @@ fees_fvsf <- do.call(rbind,
                               if (any(ge_data$knock_in == 'P')) ge_data$group[ge_data$knock_in == 'P' & grepl('T', ge_data$background)] <- 'P.T'
                               ge_data$knockin_f <- ge_data$background_f + ge_data$d_f
                               
-                              # make linear fits
-                              lfits <- do.call(rbind,
-                                               lapply(unique(ge_data$group),
-                                                      FUN = function(grp) {
-                                                        lfit_i <- summary(lm(formula = knockin_f ~ background_f,
-                                                                             data = ge_data[ge_data$group == grp, ]))
-                                                        out <- data.frame(dataset = basename(files)[i],
-                                                                          species = grp,
-                                                                          slope = lfit_i$coefficients[2, 1],
-                                                                          intercept = lfit_i$coefficients[1, 1],
-                                                                          slope_stderr = lfit_i$coefficients[2, 2],
-                                                                          intercept_stderr = lfit_i$coefficients[1, 2])
-                                                        return(out)
-                                                      }))
+                              # make total least squares fits
+                              fees_tls <- do.call(rbind,
+                                                  lapply(unique(ge_data$group),
+                                                         FUN = function(sp) {
+                                                           
+                                                           mytls <- prcomp(ge_data[ge_data$group == sp, c('background_f', 'knockin_f')])$rotation
+                                                           slope <- mytls[2, 1]/mytls[1, 1]
+                                                           intercept <- mean(ge_data$knockin_f[ge_data$group == sp]) - slope*mean(ge_data$background_f[ge_data$group == sp])
+                                                           
+                                                           x <- ge_data$background_f[ge_data$group == sp]
+                                                           y <- ge_data$knockin_f[ge_data$group == sp]
+                                                           yfit <- intercept + slope*x
+                                                           R2 <- 1 - sum((y - yfit)^2)/sum((y - mean(y))^2)
+                                                           R2[R2 < 0] <- 0 # if total-least-squares regression model fails, its R2 is set to zero
+                                                           
+                                                           return(data.frame(dataset = basename(files)[i],
+                                                                             species = sp,
+                                                                             slope = slope,
+                                                                             intercept = intercept,
+                                                                             R2 = R2))
+                                                           
+                                                         }))
                               
                               if(grepl('amyl', basename(files)[i])) {
-                                lfits$species[lfits$species == 'P'] <- 'P_0'
-                                lfits$species[lfits$species == 'P.T'] <- 'P_1'
+                                fees_tls$species[fees_tls$species == 'P'] <- 'P_0'
+                                fees_tls$species[fees_tls$species == 'P.T'] <- 'P_1'
                               }
-                              if(grepl('training_set', basename(files)[i])) lfits$dataset <- 'pyo'
+                              if(grepl('training_set', basename(files)[i])) fees_tls$dataset <- 'pyo'
                               
-                              return(lfits)
+                              return(fees_tls)
                               
                             }))
 
@@ -429,16 +525,15 @@ fees_fvsf$dataset <- factor(fees_fvsf$dataset,
                                        "amyl_Sanchez-Gorostiaga2019.csv",
                                        "butyrate_Clark2021.csv"))
 
-ggplot(fees_fvsf, aes(x = 0, y = slope, ymin = slope - slope_stderr, ymax = slope + slope_stderr)) +
+ggplot(fees_fvsf, aes(x = 0, y = slope)) +
   geom_abline(slope = 0, intercept = 1, color = 'gray') +
   geom_blank(aes(x = 0, y = 1)) +
-  geom_pointrange(size = 0.5,
-                  position = position_jitter(width = 0.5)) +
+  geom_point(cex = 2,
+             position = position_jitter(width = 0.5)) +
   facet_wrap(~dataset, nrow = 1, scales = 'free_y') +
   scale_x_continuous(name = '',
                      limits = c(-0.75, 0.75)) +
-  scale_y_continuous(name = expression(paste('Slope of ', italic(F)(bold(s)+bold(i)), ' vs. ', italic(F)(bold(s)), ' regression', sep = '')),
-                     breaks = pretty_breaks(n = 2)) +
+  scale_y_continuous(name = expression(paste('Slope of ', italic(F)(bold(s)+bold(i)), ' vs. ', italic(F)(bold(s)), ' regression', sep = ''))) +
   theme_bw() +
   theme(panel.grid = element_blank(),
         strip.background = element_blank(),
@@ -464,12 +559,6 @@ ggsave(filename = '../plots/datasets_slopes_FvsF.pdf',
        height = 100,
        units = 'mm',
        limitsize = F)
-
-# how many species display a slope =/= 1?
-upper_lims <- fees_fvsf$slope + fees_fvsf$slope_stderr
-lower_lims <- fees_fvsf$slope - fees_fvsf$slope_stderr
-
-fraction_of_slopes_different_from_one <- 1 - sum(upper_lims>1 & lower_lims<1) / length(upper_lims)
 
 # compare with FEEs fit to the dF-vs-F representation
 fees <- do.call(rbind,
@@ -517,7 +606,14 @@ intercept_cmp <- merge(fees[, c('dataset', 'species', 'intercept')],
                        suffixes = c('', '_fvsf'))
 
 ggplot(slopes_cmp, aes(x = slope, y = slope_fvsf)) +
-  geom_point()
+  geom_abline(slope = 1, 
+              intercept = 1,
+              color = 'gray') +
+  geom_point() +
+  geom_blank(aes(x = slope_fvsf, y = slope)) +
+  theme_bw() +
+  theme(aspect.ratio = 1,
+        panel.grid = element_blank())
 
 ggplot(intercept_cmp, aes(x = intercept, y = intercept_fvsf)) +
   geom_point()

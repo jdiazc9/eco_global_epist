@@ -226,7 +226,7 @@ mycor <- do.call(rbind,
                           y <- y[n]
                           
                           res <- y - x
-                          R2_identity <- 1 - sum(res^2)/sum((y - mean(y))^2) # R squared of the y = x model
+                          R2_identity <- max(1 - sum(res^2)/sum((y - mean(y))^2), 0) # R squared of the y = x model
                           
                           return(data.frame(dataset = ds,
                                             cor = R2_identity))
@@ -355,8 +355,8 @@ mycor <- do.call(rbind,
                                  y_eps <- slopes_i$slope_eps
                                  y_phi <- slopes_i$slope_phi
                                  
-                                 R2_eps <- 1 - sum((y_eps - x)^2)/sum((y_eps - mean(y_eps))^2)
-                                 R2_phi <- 1 - sum((y_phi - x)^2)/sum((y_phi - mean(y_phi))^2)
+                                 R2_eps <- max(1 - sum((y_eps - x)^2)/sum((y_eps - mean(y_eps))^2), 0)
+                                 R2_phi <- max(1 - sum((y_phi - x)^2)/sum((y_phi - mean(y_phi))^2), 0)
                                  
                                  return(data.frame(dataset = ds,
                                                    cor_eps = R2_eps,
