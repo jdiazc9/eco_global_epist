@@ -7,6 +7,14 @@ comms <- makeComms(N)
 
 # tune weight of higher-order interactions
 scale_coeffs <- function(coeff_order, mean_scale = 1, sd_scale = 2) exp(-(coeff_order - mean_scale)^2/sd_scale^2)
+# scale_coeffs <- function(coeff_order, mean_scale = 1, sd_scale = 2) 0.2 + (1 - 0.2)*exp(-(coeff_order - mean_scale)^2/sd_scale^2)
+# scale_coeffs <- function(coeff_order, mean_scale = 1, sd_scale = 2) sapply(coeff_order,
+#                                                                            FUN = function(x) {
+#                                                                              
+#                                                                              if (x <= 1) return(1)
+#                                                                              else return(0.2 + (1 - 0.2)*2^(-1*(x - 1)/(sd_scale)))
+#                                                                              
+#                                                                            })
 
 # interaction coefficients plots (wrapper function)
 makeCoeffPlots <- function(sd_scale = 2) {
@@ -68,13 +76,13 @@ makeCoeffPlots <- function(sd_scale = 2) {
 }
 
 # coeff plots (small high-order epistasis)
-makeCoeffPlots(sd_scale = 2)
+#makeCoeffPlots(sd_scale = 2)
 
 # coeff plots (small high-order epistasis)
-makeCoeffPlots(sd_scale = 4)
+#makeCoeffPlots(sd_scale = 4)
 
 # coeff plots (large high-order epistasis)
-makeCoeffPlots(sd_scale = 100)
+#makeCoeffPlots(sd_scale = 100)
 
 
 ### GENERATE SYNTHETIC LANDSCAPES AND TEST PREDICTION METHOD
@@ -90,12 +98,12 @@ if (length(params_file)) {
   
 } else {
   
-  params <- data.frame(mean_coeff = rep(seq(-1, 1, length.out = 7), 7),
-                       sd_coeff = rep(seq(0.1, 0.9, length.out = 7), each = 7))
+  params <- data.frame(mean_coeff = rep(seq(-1, 1, length.out = 6), 6),
+                       sd_coeff = rep(seq(0.1, 0.9, length.out = 6), each = 6))
   params <- do.call(rbind,
-                    lapply(10^seq(log10(0.4), log10(15), length.out = 12),
+                    lapply(10^seq(log10(0.4), log10(15), length.out = 6),
                            FUN = function(x) cbind(params, sd_scale = x)))
-  params <- do.call(rbind, replicate(8, params, simplify = FALSE))
+  params <- do.call(rbind, replicate(5, params, simplify = FALSE))
   
   params <- cbind(params,
                   rs = NA,
@@ -154,42 +162,42 @@ if (length(params_file)) {
     # evaluate quality of predictions (stitching method) in synthetic landscape
     po <- evaluatePredictions_mult(synthLandscape)
     mylm <- lm(fun_true ~ fun_predicted, data = po)
-    #po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
-    #mylm_ext <- lm(fun_true ~ fun_predicted, data = po_extremes)
+    po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
+    mylm_ext <- lm(fun_true ~ fun_predicted, data = po_extremes)
     
     params$R2_stitching[p] <- summary(mylm)$r.squared
     params$R2.identity_stitching[p] <- 1 - sum((po$fun_true - po$fun_predicted)^2)/sum((po$fun_true - mean(po$fun_true))^2)
-    #params$relError.mean_topbot10_stitching[p] <- mean(abs((po_extremes$fun_predicted - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$relError.sd_topbot10_stitching[p] <- sd(abs((po_extremes$fun_predicted - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$R2_topbot10_stitching[p] = summary(mylm_ext)$r.squared
-    #params$R2.identity_topbot10_stitching[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_predicted)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
+    params$relError.mean_topbot10_stitching[p] <- mean(abs((po_extremes$fun_predicted - po_extremes$fun_true) / po_extremes$fun_true))
+    params$relError.sd_topbot10_stitching[p] <- sd(abs((po_extremes$fun_predicted - po_extremes$fun_true) / po_extremes$fun_true))
+    params$R2_topbot10_stitching[p] = summary(mylm_ext)$r.squared
+    params$R2.identity_topbot10_stitching[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_predicted)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
     
     # evaluate quality of predictions by 1st and 2nd order regressions
     po <- get_all_loo_fits_mult(synthLandscape)
     
     # 1st order
     mylm <- lm(fun_true ~ fun_pred_1st, data = po)
-    #po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
-    #mylm_ext <- lm(fun_true ~ fun_pred_1st, data = po_extremes)
+    po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
+    mylm_ext <- lm(fun_true ~ fun_pred_1st, data = po_extremes)
     
     params$R2_reg1[p] <- summary(mylm)$r.squared
     params$R2.identity_reg1[p] <- 1 - sum((po$fun_true - po$fun_pred_1st)^2)/sum((po$fun_true - mean(po$fun_true))^2)
-    #params$relError.mean_topbot10_reg1[p] <- mean(abs((po_extremes$fun_pred_1st - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$relError.sd_topbot10_reg1[p] <- sd(abs((po_extremes$fun_pred_1st - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$R2_topbot10_reg1[p] = summary(mylm_ext)$r.squared
-    #params$R2.identity_topbot10_reg1[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_pred_1st)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
+    params$relError.mean_topbot10_reg1[p] <- mean(abs((po_extremes$fun_pred_1st - po_extremes$fun_true) / po_extremes$fun_true))
+    params$relError.sd_topbot10_reg1[p] <- sd(abs((po_extremes$fun_pred_1st - po_extremes$fun_true) / po_extremes$fun_true))
+    params$R2_topbot10_reg1[p] = summary(mylm_ext)$r.squared
+    params$R2.identity_topbot10_reg1[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_pred_1st)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
     
     # 2nd order
     mylm <- lm(fun_true ~ fun_pred_2nd, data = po)
-    #po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
-    #mylm_ext <- lm(fun_true ~ fun_pred_2nd, data = po_extremes)
+    po_extremes <- po[po$fun_true > quantile(po$fun_true, probs = 0.9) | po$fun_true < quantile(po$fun_true, probs = 0.1), ]
+    mylm_ext <- lm(fun_true ~ fun_pred_2nd, data = po_extremes)
     
     params$R2_reg2[p] <- summary(mylm)$r.squared
     params$R2.identity_reg2[p] <- 1 - sum((po$fun_true - po$fun_pred_2nd)^2)/sum((po$fun_true - mean(po$fun_true))^2)
-    #params$relError.mean_topbot10_reg2[p] <- mean(abs((po_extremes$fun_pred_2nd - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$relError.sd_topbot10_reg2[p] <- sd(abs((po_extremes$fun_pred_2nd - po_extremes$fun_true) / po_extremes$fun_true))
-    #params$R2_topbot10_reg2[p] = summary(mylm_ext)$r.squared
-    #params$R2.identity_topbot10_reg2[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_pred_2nd)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
+    params$relError.mean_topbot10_reg2[p] <- mean(abs((po_extremes$fun_pred_2nd - po_extremes$fun_true) / po_extremes$fun_true))
+    params$relError.sd_topbot10_reg2[p] <- sd(abs((po_extremes$fun_pred_2nd - po_extremes$fun_true) / po_extremes$fun_true))
+    params$R2_topbot10_reg2[p] = summary(mylm_ext)$r.squared
+    params$R2.identity_topbot10_reg2[p] = 1 - sum((po_extremes$fun_true - po_extremes$fun_pred_2nd)^2)/sum((po_extremes$fun_true - mean(po_extremes$fun_true))^2)
     
     # save
     write.table(params[p, , drop = F],
@@ -482,5 +490,179 @@ ggsave(filename = '../plots/synthLandscapes/R2_at_mediumrugedness.pdf',
        dpi = 600,
        width = 120,
        height = 100,
+       units = 'mm',
+       limitsize = F)
+
+
+
+
+### EXAMPLE FEES
+
+params_sample <- data.frame(mean_coeff = c(0, 1, 0, 0),
+                            sd_coeff = c(1, 0.5, 1, 1),
+                            sd_scale = c(0.4, 1, 1, 10))
+fees_sample <- do.call(rbind,
+                       lapply(1:nrow(params_sample),
+                              FUN = function(p) {
+                                
+                                # sample Fourier coefficients
+                                coeff <- setNames(unlist(lapply(0:N,
+                                                                FUN = function(i) apply(t(combn(N, i)),
+                                                                                        FUN = function(x) rnorm(1,
+                                                                                                                mean = params_sample$mean_coeff[p],
+                                                                                                                sd = params_sample$sd_coeff[p]),
+                                                                                        MARGIN = 1))),
+                                                  unlist(lapply(0:N,
+                                                                FUN = function(i) apply(t(combn(N, i)),
+                                                                                        FUN = function(x) paste(x, collapse = ''),
+                                                                                        MARGIN = 1))))
+                                coeff <- coeff * scale_coeffs(nchar(names(coeff)), sd_scale = params_sample$sd_scale[p])
+                                
+                                # make synthetic landscape
+                                synthLandscape <- cbind(comms,
+                                                        fun = funFromCoeff(comms, coeff))
+                                
+                                gedf <- makeGEdata(matrix2string(synthLandscape))
+                                
+                                return(cbind(case = LETTERS[p],
+                                             gedf))
+                                
+                              }))
+fees_coeff <- do.call(rbind,
+                      lapply(unique(fees_sample$case),
+                             FUN = function(case) {
+                               
+                               fees <- makeFEEs(fees_sample[fees_sample$case == case, ])
+                               
+                               return(cbind(case = case,
+                                            knock_in = rownames(fees),
+                                            fees))
+                               
+                             }))
+
+for (case in unique(fees_sample$case)){
+  
+  myplot <- 
+    ggplot(fees_sample[fees_sample$case == case, ],
+           aes(x = background_f, y = d_f)) +
+      geom_abline(slope = 0, intercept = 0, color = 'gray') +
+      geom_point(cex = 0.5,
+                 alpha = 0.5) +
+      geom_abline(data = fees_coeff[fees_coeff$case == case, ],
+                  aes(slope = b, intercept = a, color = b)) +
+      scale_color_gradient2(low = 'firebrick1',
+                            high = 'deepskyblue',
+                            mid = 'black',
+                            limits = max(abs(fees_coeff$b))*c(-1, 1)) +
+      scale_x_continuous(name = expression(italic(F)[B])) +
+      scale_y_continuous(name = expression(Delta*italic(F))) +
+      facet_wrap(~ knock_in,
+                 labeller = labeller(knock_in = setNames(paste('sp. ', 1:N, sep = ''),
+                                                         paste('sp_', 1:N, sep = ''))),
+                 nrow = 2) +
+      theme_bw() +
+      theme(aspect.ratio = 0.6,
+            panel.grid = element_blank(),
+            strip.background = element_blank(),
+            strip.text = element_blank(), # element_text(size = 14),
+            panel.border = element_blank(),
+            axis.ticks = element_blank(),
+            axis.text = element_blank(),
+            axis.title = element_text(size = 14),
+            legend.position = 'none') +
+      annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+      annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
+  
+  print(myplot)
+  
+  ggsave(myplot,
+         filename = paste('../plots/synthLandscapes/FEEs_case', case, '.pdf', sep = ''),
+         device = 'pdf',
+         dpi = 600,
+         width = 80,
+         height = 70,
+         units = 'mm',
+         limitsize = F)
+  
+}
+
+
+
+
+### single, strong HOI
+coeff <- setNames(unlist(lapply(0:N,
+                                FUN = function(i) apply(t(combn(N, i)),
+                                                        FUN = function(x) rnorm(1,
+                                                                                mean = 0.5,
+                                                                                sd = 0.5),
+                                                        MARGIN = 1))),
+                  unlist(lapply(0:N,
+                                FUN = function(i) apply(t(combn(N, i)),
+                                                        FUN = function(x) paste(x, collapse = ''),
+                                                        MARGIN = 1))))
+coeff <- coeff * scale_coeffs(nchar(names(coeff)), sd_scale = 1)
+coeff['1234'] <- -5*max(coeff)
+
+# make synthetic landscape
+synthLandscape <- cbind(comms,
+                        fun = funFromCoeff(comms, coeff))
+
+gedf <- makeGEdata(matrix2string(synthLandscape))
+
+gedf$group <- gedf$knock_in
+gedf$group[gedf$group %in% c('sp_1', 'sp_2', 'sp_3', 'sp_4')] <-
+  paste(gedf$group[gedf$group %in% c('sp_1', 'sp_2', 'sp_3', 'sp_4')],
+        gedf$d_f[gedf$group %in% c('sp_1', 'sp_2', 'sp_3', 'sp_4')] > 0,
+        sep = '')
+
+fees <- do.call(rbind,
+                lapply(unique(gedf$group),
+                       FUN = function(grp) {
+                         
+                         mylm <- lm(d_f ~ background_f,
+                                    data = gedf[gedf$group == grp, ])
+                         return(data.frame(group = grp,
+                                           knock_in = unique(gedf$knock_in[gedf$group == grp]),
+                                           a = as.numeric(mylm$coefficients[1]),
+                                           b = as.numeric(mylm$coefficients[2])))
+                         
+                       }))
+                 
+ggplot(gedf,
+       aes(x = background_f, y = d_f)) +
+  geom_abline(slope = 0, intercept = 0, color = 'gray') +
+  geom_point(cex = 0.5,
+             alpha = 0.5) +
+  geom_abline(data = fees,
+              aes(slope = b, intercept = a, color = b)) +
+  scale_color_gradient2(low = 'firebrick1',
+                        high = 'deepskyblue',
+                        mid = 'black',
+                        limits = max(abs(fees$b))*c(-1, 1)) +
+  scale_x_continuous(name = expression(italic(F)[B])) +
+  scale_y_continuous(name = expression(Delta*italic(F))) +
+  facet_wrap(~ knock_in,
+             labeller = labeller(knock_in = setNames(paste('sp. ', 1:N, sep = ''),
+                                                     paste('sp_', 1:N, sep = ''))),
+             nrow = 2) +
+  theme_bw() +
+  theme(aspect.ratio = 0.6,
+        panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_blank(), # element_text(size = 14),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_text(size = 14),
+        legend.position = 'none') +
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
+
+ggsave(myplot,
+       filename = '../plots/synthLandscapes/FEEs_split.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 100,
+       height = 80,
        units = 'mm',
        limitsize = F)

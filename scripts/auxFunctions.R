@@ -67,55 +67,62 @@ varFractionFromCoeff <- function(coeff) {
 getDEE <- function(df) {
   
   N <- ncol(df) - 1
+  species <- colnames(df)[1:N]
   pairs <- t(combn(N, 2))
+  pairs <- rbind(pairs, cbind(pairs[, 2], pairs[, 1]))
   
   DEE <- do.call(rbind,
                  lapply(1:nrow(pairs),
                         FUN = function(p) {
                           
-                          C_ij <- df[df[, pairs[p, 1]] == 1 & df[, pairs[p, 2]] == 1, ]
-                          colnames(C_ij)[ncol(C_ij)] <- 'fun_ij'
-                          C_ij[, pairs[p, 1]] <- 0
-                          C_ij[, pairs[p, 2]] <- 0
-                          
-                          C_i <- df[df[, pairs[p, 1]] == 1 & df[, pairs[p, 2]] == 0, ]
-                          colnames(C_i)[ncol(C_i)] <- 'fun_i'
-                          C_i[, pairs[p, 1]] <- 0
-                          
-                          C_j <- df[df[, pairs[p, 1]] == 0 & df[, pairs[p, 2]] == 1, ]
-                          colnames(C_j)[ncol(C_j)] <- 'fun_j'
-                          C_j[, pairs[p, 2]] <- 0
+                          out <- data.frame(species_i = species[pairs[p, 1]],
+                                            species_j = species[pairs[p, 2]],
+                                            background = NA,
+                                            fun_background = NA,
+                                            dF_i = NA,
+                                            dF_j = NA,
+                                            eps_ij = NA,
+                                            fun_ij = NA)
                           
                           C_0 <- df[df[, pairs[p, 1]] == 0 & df[, pairs[p, 2]] == 0, ]
-                          colnames(C_0)[ncol(C_0)] <- 'fun_0'
+                          C_i <- df[df[, pairs[p, 1]] == 1 & df[, pairs[p, 2]] == 0, ]
+                          C_j <- df[df[, pairs[p, 1]] == 0 & df[, pairs[p, 2]] == 1, ]
+                          C_ij <- df[df[, pairs[p, 1]] == 1 & df[, pairs[p, 2]] == 1, ]
                           
-                          C_all <- merge(merge(merge(C_0, C_i), C_j), C_ij)
-                          dF_i <- C_all$fun_i - C_all$fun_0
-                          dF_j <- C_all$fun_j - C_all$fun_0
-                          eps_ij <- C_all$fun_ij - C_all$fun_i - C_all$fun_j + C_all$fun_0
+                          if (min(c(nrow(C_0), nrow(C_i), nrow(C_j), nrow(C_ij)))) {
+                            
+                            colnames(C_ij)[ncol(C_ij)] <- 'fun_ij'
+                            C_ij[, pairs[p, 1]] <- 0
+                            C_ij[, pairs[p, 2]] <- 0
+                            
+                            
+                            colnames(C_i)[ncol(C_i)] <- 'fun_i'
+                            C_i[, pairs[p, 1]] <- 0
+                            
+                            
+                            colnames(C_j)[ncol(C_j)] <- 'fun_j'
+                            C_j[, pairs[p, 2]] <- 0
+                            
+                            
+                            colnames(C_0)[ncol(C_0)] <- 'fun_0'
+                            
+                            C_all <- merge(merge(merge(C_0, C_i), C_j), C_ij)
+                            dF_i <- C_all$fun_i - C_all$fun_0
+                            dF_j <- C_all$fun_j - C_all$fun_0
+                            eps_ij <- C_all$fun_ij - C_all$fun_i - C_all$fun_j + C_all$fun_0
+
+                            if (nrow(C_all)) out <- data.frame(species_i = species[pairs[p, 1]],
+                                                               species_j = species[pairs[p, 2]],
+                                                               background = matrix2string(C_all[, 1:(N+1)])$community,
+                                                               fun_background = C_all$fun_0,
+                                                               dF_i = dF_i,
+                                                               dF_j = dF_j,
+                                                               eps_ij = eps_ij,
+                                                               fun_ij = C_all$fun_ij)
+                            
+                          }
                           
-                          upper <- pmax(C_all$fun_0 + dF_i, C_all$fun_0 + dF_j) - (C_all$fun_0 + dF_i + dF_j)
-                          lower <- pmin(C_all$fun_0 + dF_i, C_all$fun_0 + dF_j) - (C_all$fun_0 + dF_i + dF_j)
-                          epist_type <- sapply(1:nrow(C_all),
-                                               FUN = function(i) {
-                                                 
-                                                 if (eps_ij[i] > 0) return('positive')
-                                                 if (eps_ij[i] < 0 & eps_ij[i] > upper[i]) return('negative_magnitude')
-                                                 if (eps_ij[i] < upper[i] & eps_ij[i] > lower[i]) return('negative_sign')
-                                                 if (eps_ij[i] < lower[i]) return('negative_reciprocal_sign')
-                                                 
-                                               })
-                          epist_type <- NA # FIXME
-                          
-                          return(data.frame(species_i = paste('sp_', pairs[p, 1], sep = ''),
-                                            species_j = paste('sp_', pairs[p, 2], sep = ''),
-                                            background = matrix2string(C_all[, 1:(N+1)])$community,
-                                            fun_background = C_all$fun_0,
-                                            dF_i = dF_i,
-                                            dF_j = dF_j,
-                                            eps_ij = eps_ij,
-                                            fun_ij = C_all$fun_ij,
-                                            epist_type = epist_type))
+                          return(out)
                           
                         }))
   
@@ -159,7 +166,6 @@ evaluatePredictions_base <- function(df) {
                                   df_is <- df[-n_oos, , drop = F]
                                   
                                   gedf <- makeGEdata(matrix2string(df_is))
-                                  predictF_base(matrix2string(df_oos)$community, matrix2string(df_is))
                                   
                                   out <- merge(matrix2string(df_oos),
                                                predictF_base(matrix2string(df_oos)$community, matrix2string(df_is)),
@@ -188,7 +194,6 @@ evaluatePredictions_mult <- function(df, fraction_out_of_sample = 0.6) {
   
   gedf <- makeGEdata(matrix2string(df_is))
   theta <- inferAllResiduals(gedf)
-  predictF_fullClosure(matrix2string(df_oos)$community, matrix2string(df_is), theta)
   
   out <- merge(matrix2string(df_oos),
                predictF_fullClosure(matrix2string(df_oos)$community, matrix2string(df_is), theta),
@@ -513,6 +518,7 @@ rmse <- function(observed, predicted){
 
 
 get_rs <- function(df){
+  
   ## here assuming function column is named 'fitness', can be changed ##
   lin_fit <- lm(`fun` ~ . , df)
   add_coefs <- coef(lin_fit)[2:ncol(df)]
@@ -528,6 +534,19 @@ get_rs <- function(df){
   return(rs)
 }
 
+# calculate fraction of functional variance explained by HOIs
+get_vH <- function(df){
+  
+  lin_fit <- lm(`fun` ~ .*. , df)
+  add_coefs <- coef(lin_fit)[2:ncol(df)]
+  
+  res_linear <- data.frame(obs = df$`fun`, 
+                           predicted = lin_fit$fitted.values)
+  
+  vH <- 1 - var(res_linear$predicted) / var(res_linear$obs)
+  
+  return(vH)
+}
 
 
 

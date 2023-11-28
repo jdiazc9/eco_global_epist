@@ -76,13 +76,13 @@ makeCoeffPlots <- function(sd_scale = 2) {
 }
 
 # coeff plots (small high-order epistasis)
-makeCoeffPlots(sd_scale = 2)
+#makeCoeffPlots(sd_scale = 2)
 
 # coeff plots (small high-order epistasis)
-makeCoeffPlots(sd_scale = 4)
+#makeCoeffPlots(sd_scale = 4)
 
 # coeff plots (large high-order epistasis)
-makeCoeffPlots(sd_scale = 100)
+#makeCoeffPlots(sd_scale = 100)
 
 
 ### GENERATE SYNTHETIC LANDSCAPES AND TEST PREDICTION METHOD
@@ -104,10 +104,10 @@ if (length(params_file)) {
   #                   lapply(10^seq(log10(0.4), log10(15), length.out = 12),
   #                          FUN = function(x) cbind(params, sd_scale = x)))
   # params <- do.call(rbind, replicate(8, params, simplify = FALSE))
-  params <- data.frame(mean_coeff = rep(seq(-1, 1, length.out = 4), 4),
-                       sd_coeff = rep(seq(0.1, 0.9, length.out = 4), each = 4))
+  params <- data.frame(mean_coeff = rep(seq(-1, 1, length.out = 7), 7),
+                       sd_coeff = rep(seq(0.1, 0.9, length.out = 7), each = 7))
   params <- do.call(rbind,
-                    lapply(10^seq(log10(0.4), log10(15), length.out = 4),
+                    lapply(10^seq(log10(0.4), log10(15), length.out = 12),
                            FUN = function(x) cbind(params, sd_scale = x)))
   params <- do.call(rbind, replicate(4, params, simplify = FALSE))
   

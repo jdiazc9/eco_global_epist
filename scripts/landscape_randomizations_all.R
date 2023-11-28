@@ -142,127 +142,6 @@ randomizations$dataset <- factor(randomizations$dataset,
 empirical_fees$dataset <- factor(empirical_fees$dataset,
                                  levels = levels(randomizations$dataset))
 
-ggplot(randomizations, aes(x = slope, y = R2, color = alpha)) +
-  geom_point(shape = 19,
-             alpha = 0.5,
-             stroke = 0,
-             cex = 1.5) +
-  geom_point(data = empirical_fees,
-             color = 'black',
-             shape = 15) +
-  facet_wrap(~ dataset,
-             nrow = 1,
-             scales = 'free') +
-  theme_bw() +
-  scale_x_continuous(name = 'FEE slope',
-                     breaks = pretty_breaks(n = 2),
-                     limits = c(-2.5, 1)) +
-  scale_y_continuous(name = expression(paste(italic(R)^2, ' of FEE', sep = '')),
-                     breaks = pretty_breaks(n = 2),
-                     limits = c(0, 1)) +
-  scale_color_gradient(low = '#d32f37',
-                       high = '#76d3d6') +
-  theme_bw() +
-  theme(panel.grid = element_blank(),
-        strip.background = element_blank(),
-        strip.text = element_text(face = 'italic',
-                                  size = 10),
-        aspect.ratio = 1,
-        axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
-        panel.background = element_blank())
-
-if(saveplots) {
-  ggsave(filename = '../plots/benchmark_slope_vs_R2.pdf',
-       device = 'pdf',
-       dpi = 600,
-       width = 330,
-       height = 80,
-       units = 'mm',
-       limitsize = F)
-}
-
-
-ggplot(randomizations, aes(x = slope, y = intercept, color = alpha)) +
-  geom_point(shape = 19,
-             alpha = 0.5,
-             stroke = 0,
-             cex = 1.5) +
-  geom_point(data = empirical_fees,
-             color = 'black',
-             shape = 15) +
-  facet_wrap(~ dataset,
-             nrow = 1,
-             scales = 'free') +
-  theme_bw() +
-  scale_x_continuous(name = 'FEE slope',
-                     breaks = pretty_breaks(n = 2),
-                     limits = c(-2.5, 1)) +
-  scale_y_continuous(name = 'FEE intercept [a.u.]',
-                     breaks = pretty_breaks(n = 2)) +
-  scale_color_gradient(low = '#d32f37',
-                       high = '#76d3d6') +
-  theme_bw() +
-  theme(panel.grid = element_blank(),
-        strip.background = element_blank(),
-        strip.text = element_text(face = 'italic',
-                                  size = 10),
-        aspect.ratio = 1,
-        axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
-        panel.background = element_blank())
-
-if(saveplots) {
-  ggsave(filename = '../plots/benchmark_slope_vs_intercept.pdf',
-         device = 'pdf',
-         dpi = 600,
-         width = 300,
-         height = 80,
-         units = 'mm',
-         limitsize = F)
-}
-
-ggplot(randomizations, aes(x = intercept, y = R2, color = alpha)) +
-  geom_point(shape = 19,
-             alpha = 0.5,
-             stroke = 0,
-             cex = 1.5) +
-  geom_point(data = empirical_fees,
-             color = 'black',
-             shape = 15) +
-  facet_wrap(~ dataset,
-             nrow = 1,
-             scales = 'free') +
-  theme_bw() +
-  scale_x_continuous(name = 'FEE intercept [a.u.]',
-                     breaks = pretty_breaks(n = 2)) +
-  scale_y_continuous(name = expression(paste(italic(R)^2, ' of FEE', sep = '')),
-                     breaks = pretty_breaks(n = 2),
-                     limits = c(0, 1)) +
-  scale_color_gradient(low = '#d32f37',
-                       high = '#76d3d6') +
-  theme_bw() +
-  theme(panel.grid = element_blank(),
-        strip.background = element_blank(),
-        strip.text = element_text(face = 'italic',
-                                  size = 10),
-        aspect.ratio = 1,
-        axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
-        panel.background = element_blank())
-
-if(saveplots) {
-  ggsave(filename = '../plots/benchmark_intercept_vs_R2.pdf',
-       device = 'pdf',
-       dpi = 600,
-       width = 330,
-       height = 80,
-       units = 'mm',
-       limitsize = F)
-}
-
-
-
 
 ### PROJECTION PLOTS
 
@@ -456,8 +335,42 @@ mytests <- do.call(rbind,
                           }))
 
 pt <- 0.01
-sum(mytests$pval_slope < pt | mytests$pval_intercept < pt | mytests$pval_R2 < pt) / nrow(mytests)
+mytests$signif <- (mytests$pval_slope < pt | mytests$pval_intercept < pt | mytests$pval_R2 < pt)
 
+slope_cmp <- merge(mytests[, c('dataset', 'species', 'signif')],
+                   empirical_fees[, c('dataset', 'species', 'slope')],
+                   all = T)
+
+ggplot(slope_cmp, aes(x = signif, y = slope)) +
+  geom_hline(yintercept = 0,
+             color = 'gray') +
+  geom_violin(fill = 'black',
+              alpha = 0.25,
+              color = NA,
+              bw = 0.05) +
+  geom_point() +
+  scale_y_continuous(name = 'FEE slope') +
+  scale_x_discrete(labels = c('Empirical FEE\ncompatible with null model',
+                              'Empirical FEE\nnot compatible with null model')) +
+  theme_bw() +
+  theme(aspect.ratio = 1,
+        panel.grid = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 16),
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_text(angle = 30,
+                                   size = 14,
+                                   hjust = 1),
+        axis.title.x = element_blank(),
+        legend.position = 'none')
+
+ggsave(filename = '../plots/nullmodels_slopes_cmp.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 100,
+       height = 150,
+       units = 'mm',
+       limitsize = F)
 
 
 
