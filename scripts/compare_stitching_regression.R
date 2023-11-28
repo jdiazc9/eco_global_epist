@@ -727,15 +727,6 @@ ggsave(filename = '../plots/stitching_vs_regression_top_bottom_absErr.pdf',
 
 
 
-
-
-
-
-
-
-
-
-=======
   p_regression <- ggplot(loo_fits$loo_res_second_order, aes(x = obs, y = pred)) + geom_point() + 
     theme_bw() + geom_abline() + xlab('Observed') + ylab('Predicted') + 
     scale_x_continuous(limits = c(min_scale, max_scale)) + 
@@ -762,7 +753,7 @@ ggsave(filename = '../plots/stitching_vs_regression_top_bottom_absErr.pdf',
   
   #save(r2_loo, r2_linear_loo, res, 
     #paste0('../', name, '_model_comparison_loo.RData')) 
-}
+
 
 plot_grid(p_list[[1]], p_list[[2]], p_list[[3]], p_list[[4]], p_list[[5]]) 
 
@@ -785,4 +776,3 @@ res_long %>%
 
 
 ##ggsave('~/global_epistasis_microbes/Figures/stitching_vs_reg_all_data.png', height = 8, width = 10)
->>>>>>> Stashed changes
