@@ -56,6 +56,7 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
   mean_df <- df %>% distinct(community, .keep_all = TRUE) %>% dplyr::select(-c(`function`))
   colnames(mean_df)[which(colnames(mean_df) == 'mean_fitness')] <- 'function'
   
+  
   ####################
   #### stitching #####
   ####################
@@ -94,6 +95,7 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
     tmp <- list(obs = po$observed, pred = po$predicted)
     loo_res <- rbind(loo_res, tmp)
   }
+
   
   #################################
   # first order linear regression #
@@ -121,6 +123,31 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
     loo_res_first_order <- rbind(loo_res_first_order, tmp)
   }
   
+  #####################################################
+  # first order linear regression, ridge regularization #
+  #####################################################
+  ridge_loo_res_first_order <- tibble()
+  for (exp in unique_communities){
+    exp_inds <- which(df$community == exp)
+    #set up regression
+    y <- as.matrix(df[-exp_inds,]$`function`)   
+    f <- as.formula(y ~ .)
+    x <- model.matrix(f, df[-exp_inds,] %>% dplyr::select(all_of(all_species)))
+    
+    unique_communities_train <- unique_communities[-which(unique_communities == exp)]
+    fold_ids <- get_folds(df[-exp_inds,], unique_communities_train, n_folds = 10)
+    
+    cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids, alpha = 0) 
+    
+    #get out of fit cv 
+    y_test <- as.matrix(df[exp_inds[1],]$`function`)
+    f_test <- as.formula(y_test ~ .)
+    x_test <- model.matrix(f_test, df[exp_inds[1],] %>% dplyr::select(all_of(all_species)))
+    y_pred_cv <- predict(cv_fit, x_test, s = "lambda.1se" )
+    
+    tmp <- list(obs = df[exp_inds[1],]$mean_fitness, pred = y_pred_cv)
+    ridge_loo_res_first_order <- rbind(ridge_loo_res_first_order, tmp)
+  }
   
   #################################
   # second order linear regression #
@@ -154,13 +181,101 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
     loo_res_second_order <- rbind(loo_res_second_order, tmp)
   }
   
+  ###############################################################
+  # second order linear regression, ridge regularization #
+  ###############################################################
+  count <- 1
+  ridge_loo_res_second_order <- tibble()
+  for (exp in unique_communities){
+    if (v){
+      print(paste0(count , ' out of ', length(unique_communities)))
+      count <- count + 1
+    }
+    
+    exp_inds <- which(df$community == exp)
+    #set up regression
+    y <- as.matrix(df[-exp_inds,]$`function`)   
+    f <- as.formula(y ~ .*.)
+    x <- model.matrix(f, df[-exp_inds,] %>% dplyr::select(all_of(all_species)))
+    
+    unique_communities_train <- unique_communities[-which(unique_communities == exp)]
+    fold_ids <- get_folds(df[-exp_inds,], unique_communities_train, n_folds = 10)
+    
+    cv_fit <- cv.glmnet(x = x, y = y, foldid = fold_ids, alpha = 0) 
+    
+    #get out of fit cv 
+    y_test <- as.matrix(df[exp_inds[1],]$`function`)
+    f_test <- as.formula(y_test ~ .*.)
+    x_test <- model.matrix(f_test, df[exp_inds[1],] %>% dplyr::select(all_of(all_species)))
+    y_pred_cv <- predict(cv_fit, x_test, s = "lambda.1se" )
+    
+    tmp <- list(obs = df[exp_inds[1],]$mean_fitness, pred = y_pred_cv)
+    ridge_loo_res_second_order <- rbind(ridge_loo_res_second_order, tmp)
+  }
+  
+  loo_res$pred[loo_res$pred < 0] <- 0
+  loo_res_first_order$pred[loo_res_first_order$pred < 0] <- 0
+  loo_res_second_order$pred[loo_res_second_order$pred < 0] <- 0
+  ridge_loo_res_first_order$pred[ridge_loo_res_first_order$pred < 0] <- 0
+  ridge_loo_res_second_order$pred[ridge_loo_res_second_order$pred < 0] <- 0
+  
+  ### aggregate loo R^2 ###
   r2 <- cor(loo_res$obs, loo_res$pred)^2
   r2_first_order <- cor(loo_res_first_order$obs, loo_res_first_order$pred)^2
   r2_second_order <- cor(loo_res_second_order$obs, loo_res_second_order$pred)^2
+  r2_ridge_first_order <- cor(ridge_loo_res_first_order$obs, ridge_loo_res_first_order$pred)^2
+  r2_ridge_second_order <- cor(ridge_loo_res_second_order$obs, ridge_loo_res_second_order$pred)^2
   
-  return(list(r2 = r2, r2_first_order = r2_first_order, r2_second_order = r2_second_order, 
-              loo_res = loo_res, loo_res_first_order = loo_res_first_order,
-              loo_res_second_order = loo_res_second_order))
+  return(list(r2 = r2,   #stitching 
+              r2_first_order = r2_first_order,  #regression, l1 regularization
+              r2_second_order = r2_second_order, 
+              r2_ridge_first_order = r2_ridge_first_order, #regression, l2 regularization
+              r2_ridge_second_order = r2_ridge_second_order,
+              loo_res = loo_res,  #stitching, obs vs. pred
+              loo_res_first_order = loo_res_first_order, #regression, l1 regularization, obs vs.pred
+              loo_res_second_order = loo_res_second_order,
+              ridge_loo_res_first_order = ridge_loo_res_first_order, #regression, l2 regularization, obs vs. pred
+              ridge_loo_res_second_order = ridge_loo_res_second_order))
+}
+
+# get unregularized regression R^2
+get_unregularized_fits <- function(df){
+  N <- ncol(df) -1 
+  
+  all_species <- colnames(df)[1:N]
+  
+  if (any(rowSums(df[,1:N]) == 0)){
+    df <- df[-which(rowSums(df[,1:N]) == 0),]
+  }
+  
+  communities <- sapply(1:nrow(df),
+                        FUN = function(i) paste(all_species[df[i, -ncol(df)] == 1], collapse = ','))
+  unique_communities <- unique(communities)
+  df <- df %>% mutate(community = communities) 
+  
+  #add mean fitness to df 
+  df <- df %>% group_by(community) %>% mutate(mean_fitness = mean(`function`)) %>% ungroup() 
+  
+  mean_df <- df %>% distinct(community, .keep_all = TRUE) %>% dplyr::select(-c(`function`))
+  colnames(mean_df)[which(colnames(mean_df) == 'mean_fitness')] <- 'function'
+  
+  ##############################
+  ## unregularized regression ##
+  ##############################
+  #first order
+  lin_fit <- lm(`function` ~ ., df[, 1:(N + 1)])
+  distinct_preds <- cbind(df, lin_preds = lin_fit$fitted.values) %>% distinct(community, .keep_all = TRUE)
+  
+  r2_ur_first_order <- cor(distinct_preds$mean_fitness, distinct_preds$lin_preds)^2
+  
+  #second order
+  lin_fit_second_order <- lm(`function` ~ .*. , df[, 1:(N + 1)])
+  distinct_preds <- cbind(df, lin_preds = lin_fit_second_order$fitted.values) %>% distinct(community, .keep_all = TRUE)
+  
+  r2_ur_second_order <- cor(distinct_preds$mean_fitness, distinct_preds$lin_preds)^2
+  
+  return(list(r2_ur_first_order = r2_ur_first_order, 
+              r2_ur_second_order = r2_ur_second_order))
 }
 
 
@@ -183,7 +298,9 @@ sub_dataset1 <- 'TRUE'
 p_list <- list()
 res <- tibble()
 
+lm_res <- tibble() 
 res_full <- tibble()
+
 for (dataset_id in 1:length(all_datasets)){
   df <- read_csv(all_datasets[dataset_id], show_col_types = F)
   
@@ -206,39 +323,6 @@ for (dataset_id in 1:length(all_datasets)){
     mode <- 'full'
   }
   
-  if (dataset_id == 6){
-    df$`function` <- rowMeans(df[, 9:11])
-    df <- df[, c(1:8, 12)]
-  }
-  
-  df <- aggregate(`function` ~ .,
-                  data = df,
-                  FUN = mean)
-  
-  loo_fits <- get_all_loo_fits(df, mode)
-  
-  loo_fits$loo_res$pred[loo_fits$loo_res$pred < 0] <- 0
-  loo_fits$loo_res_first_order$pred[loo_fits$loo_res_first_order$pred < 0] <- 0
-  loo_fits$loo_res_second_order$pred[loo_fits$loo_res_second_order$pred < 0] <- 0
-  
-  res_full <- rbind(res_full,
-                    rbind(data.frame(dataset = name,
-                                     method = 'stitching',
-                                     pred = loo_fits$loo_res$pred,
-                                     obs = loo_fits$loo_res$obs,
-                                     sq_err = abs(loo_fits$loo_res$obs - loo_fits$loo_res$pred)/mean(loo_fits$loo_res$obs)),
-                          data.frame(dataset = name,
-                                     method = 'first_order',
-                                     pred = loo_fits$loo_res_first_order$pred,
-                                     obs = loo_fits$loo_res_first_order$obs,
-                                     sq_err = abs(loo_fits$loo_res_first_order$obs - loo_fits$loo_res_first_order$pred)/mean(loo_fits$loo_res_first_order$obs)),
-                          data.frame(dataset = name,
-                                     method = 'second_order',
-                                     pred = loo_fits$loo_res_second_order$pred,
-                                     obs = loo_fits$loo_res_second_order$obs,
-                                     sq_err = abs(loo_fits$loo_res_second_order$obs - loo_fits$loo_res_second_order$pred)/mean(loo_fits$loo_res_second_order$obs))))
->>>>>>> Stashed changes
-  
   if (name == "plant-biommass_Kuebbing2016_all"){
     if (sub_dataset1){
       df <- df[,c(1:4, 9)]
@@ -250,11 +334,12 @@ for (dataset_id in 1:length(all_datasets)){
     }
   } 
   
-  loo_fits <- get_all_loo_fits(df, mode)
+  df <- aggregate(`function` ~ .,
+                  data = df,
+                  FUN = mean)
   
-  loo_fits$loo_res$pred[loo_fits$loo_res$pred < 0] <- 0
-  loo_fits$loo_res_first_order$pred[loo_fits$loo_res_first_order$pred < 0] <- 0
-  loo_fits$loo_res_second_order$pred[loo_fits$loo_res_second_order$pred < 0] <- 0
+  loo_fits <- get_all_loo_fits(df, mode)
+
   
   res_full <- rbind(res_full,
                     rbind(data.frame(dataset = name,
@@ -271,8 +356,25 @@ for (dataset_id in 1:length(all_datasets)){
                                      method = 'second_order',
                                      pred = loo_fits$loo_res_second_order$pred,
                                      obs = loo_fits$loo_res_second_order$obs,
-                                     sq_err = abs(loo_fits$loo_res_second_order$obs - loo_fits$loo_res_second_order$pred)/mean(loo_fits$loo_res_second_order$obs))))
+                                     sq_err = abs(loo_fits$loo_res_second_order$obs - loo_fits$loo_res_second_order$pred)/mean(loo_fits$loo_res_second_order$obs))), 
+                          data.frame(dataset = name,
+                                     method = 'first_order_ridge',
+                                     pred = loo_fits$ridge_loo_res_first_order$pred,
+                                     obs = loo_fits$ridge_loo_res_first_order$obs,
+                                     sq_err = abs(loo_fits$ridge_loo_res_first_order$obs - loo_fits$ridge_loo_res_first_order$pred)/mean(loo_fits$ridge_loo_res_first_order$obs)),
+                          data.frame(dataset = name,
+                                     method = 'second_order_ridge',
+                                     pred = loo_fits$ridge_loo_res_second_order$pred,
+                                     obs = loo_fits$ridge_loo_res_second_order$obs,
+                                     sq_err = abs(loo_fits$ridge_loo_res_second_order$obs - loo_fits$ridge_loo_res_second_order$pred)/mean(loo_fits$ridge_loo_res_second_order$obs)))
   
+  #save unregularized regression fits
+  ur_fits <- get_unregularized_fits(df)
+  lm_res <- rbind(lm_res, 
+                  rbind(data.frame(dataset = name, 
+                                   r2_ur_first_order = ur_fits$r2_ur_first_order, 
+                                   r2_ur_second_order = ur_fits$r2_ur_second_order)))
+
 }
 
 legacy <- res_full
@@ -295,16 +397,16 @@ res_full$dataset <- factor(res_full$dataset,
                                       'Bacterial\nxylose oxidation',
                                       'Bacterial\nstarch hydrolysis'))
 
-scales_limits_pred <- rbind(aggregate(formula = pred~method+dataset,
+scales_limits_pred <- rbind(aggregate(pred~method+dataset,
                                       data = res_full,
                                       FUN = max),
-                            aggregate(formula = pred~method+dataset,
+                            aggregate(pred ~ method+dataset,
                                       data = res_full,
                                       FUN = min))
-scales_limits_obs <- rbind(aggregate(formula = obs~method+dataset,
+scales_limits_obs <- rbind(aggregate(obs~method+dataset,
                                      data = res_full,
                                      FUN = max),
-                           aggregate(formula = obs~method+dataset,
+                           aggregate(obs~method+dataset,
                                      data = res_full,
                                      FUN = min))
 
@@ -313,10 +415,10 @@ colnames(scales_limits_pred) <- c('method', 'dataset', 'f')
 
 scales_limits <- rbind(scales_limits_pred, scales_limits_obs)
 
-scales_limits <- rbind(aggregate(formula = f~dataset,
+scales_limits <- rbind(aggregate(f~dataset,
                                  data = scales_limits,
                                  FUN = max),
-                       aggregate(formula = f~dataset,
+                       aggregate(f~dataset,
                                  data = scales_limits,
                                  FUN = min))
 
@@ -330,7 +432,13 @@ scales_limits$obs <- scales_limits$f
 scales_limits <- scales_limits[, c('method', 'dataset', 'pred', 'obs')]
 scales_limits$invasives <- FALSE
 
-ggplot(res_full, aes(x = obs, y = pred, shape = invasives)) +
+######################################################
+### plot predicted versus observed values,         ###
+### stitching & regression with l1 regularization  ###
+######################################################
+
+res_full %>% filter(!method %in% c('first_order_ridge', 'second_order_ridge')) %>% 
+  ggplot(aes(x = obs, y = pred, shape = invasives)) +
   geom_abline(slope = 1,
               intercept = 0,
               color = '#d1d3d4') +
@@ -366,7 +474,9 @@ ggsave(filename = '../plots/stitching_vs_regression.pdf',
        units = 'mm',
        limitsize = F)
 
-# plot R squared
+#############################
+## plot R^2 for each model ##
+#############################
 
 res_full$inter <- paste(res_full$dataset, res_full$invasives, sep = ' / ')
 
@@ -391,6 +501,8 @@ rsq <- do.call(rbind,
                         
                       }))
 
+test <- res_full %>% filter(method == 'second_order_ridge', inter == "Phytoplankton\nbiomass / FALSE" ) 
+
 rsq$invasives <- grepl('TRUE', rsq$inter)
 
 rsq$inter <- gsub(' / TRUE', '', rsq$inter)
@@ -406,7 +518,9 @@ rsq$dataset <- factor(rsq$dataset,
 
 rsq$natives <- !rsq$invasives
 
-ggplot(rsq, aes(x = method, y = r2, fill = interaction(method, natives), color = interaction(method, natives))) +
+# R^2 values, stitching method & regression with l1 regularization
+rsq %>% filter(!method %in% c('first_order_ridge', 'second_order_ridge')) %>% 
+  ggplot(aes(x = method, y = r2, fill = interaction(method, natives), color = interaction(method, natives))) +
   geom_bar(stat = 'identity',
            width = 0.6,
            position = 'dodge') +
@@ -425,8 +539,8 @@ ggplot(rsq, aes(x = method, y = r2, fill = interaction(method, natives), color =
         strip.text = element_text(face = 'italic',
                                   size = 10),
         aspect.ratio = 1.6,
-        axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
+        #axis.text = element_text(size = 16),
+        #axis.title = element_text(size = 18),
         axis.title.x = element_blank(),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
@@ -438,6 +552,7 @@ ggplot(rsq, aes(x = method, y = r2, fill = interaction(method, natives), color =
   annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
   annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
 
+
 ggsave(filename = '../plots/stitching_vs_regression_R2.pdf',
        device = 'pdf',
        dpi = 600,
@@ -445,6 +560,76 @@ ggsave(filename = '../plots/stitching_vs_regression_R2.pdf',
        height = 150,
        units = 'mm',
        limitsize = F)
+
+##############################################
+##  plot R^2 values,                        ##
+##  regression with l1 & l2 regularization  ##
+##############################################
+
+rsq %>% filter(!method %in% c('stitching')) %>% 
+  ggplot(aes(x = method, y = r2, fill = interaction(method, natives), color = interaction(method, natives))) +
+  geom_bar(stat = 'identity',
+           width = 0.6,
+           position = 'dodge') +
+  facet_wrap(~dataset,
+             nrow = 1) +
+  scale_y_continuous(name = 'R2',
+                     limits = c(0, 1),
+                     breaks = pretty_breaks(n = 4)) +
+  scale_color_manual(values = c('#99d7dc', '#176766', '#b33a3b', 'darkred',
+                                'white', 'white', 'white', 'white')) +
+  scale_fill_manual(values = c('white', 'white', 'white', 'white',
+                               '#99d7dc', '#176766', '#b33a3b', 'darkred')) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = 'italic',
+                                  size = 10),
+        aspect.ratio = 1.6,
+        #axis.text = element_text(size = 16),
+        #axis.title = element_text(size = 18),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position = 'bottom') +
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5) +
+  annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
+  annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
+
+ggsave(filename = '../plots/ridge_vs_lasso_R2.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 200,
+       height = 150,
+       units = 'mm',
+       limitsize = F)
+
+#########################################
+##  plot unregularized regression R^2  ##
+########################################
+colnames(lm_res) <- c('Dataset', 'First Order', 'Second Order')
+
+lm_res %>% pivot_longer(-Dataset) %>% ggplot(aes(x = name, y = value, fill = name)) +
+  geom_bar(stat = 'identity', width = 0.6, position = 'dodge') + 
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = 'italic',
+                                  size = 10),
+        aspect.ratio = 1.6,
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        #panel.border = element_blank(),
+        panel.background = element_blank()) +
+  facet_wrap(~Dataset, nrow = 1) +
+  ylab(expression(R^2)) + 
+  labs(fill = '') + 
+  ggtitle('Summary of unregularized regression fits')
+
 
 # top and bottom-performing communities
 threshold <- 0.1
