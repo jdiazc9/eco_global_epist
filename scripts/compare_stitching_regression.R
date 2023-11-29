@@ -68,11 +68,6 @@ get_all_loo_fits <- function(df, mode = 'full', v = FALSE){
     
     data <- mean_df[-exp_inds,] %>% dplyr::select(-community) 
     
-    ###DELETE THIS
-    if (! any(rowSums(mean_df[,1:N]) == 0)){
-      data <- rbind(data, rep(0, (N + 1)))
-    }
-    
     obsF <- mean_df[exp_inds[1],] %>% dplyr::select(-community) 
     target <- matrix2string(obsF)
     
@@ -292,6 +287,7 @@ all_datasets <- c(paste0(path, all_datasets), '../pyoverdine_data/training_set.c
 
 all_datasets <- all_datasets[!grepl('Clark', all_datasets)]
 
+
 #kuebbing flag 
 sub_dataset1 <- 'TRUE'
 
@@ -477,6 +473,14 @@ ggsave(filename = '../plots/stitching_vs_regression.pdf',
 #############################
 ## plot R^2 for each model ##
 #############################
+get_r2 <- function(observed, predicted){
+  
+  RSS <- sum((observed - predicted)^2)
+  TSS <- sum((observed - mean(observed))^2)
+  
+  return (1 - RSS/TSS)
+  
+}
 
 res_full$inter <- paste(res_full$dataset, res_full$invasives, sep = ' / ')
 
@@ -489,19 +493,19 @@ rsq <- do.call(rbind,
                                           r2 = numeric(0))
                         
                         for (method in unique(res_full$method)) {
-                          lmod <- lm(formula = pred~obs,
-                                     data = res_full[res_full$inter == inter & res_full$method == method, ])
+                          #lmod <- lm(formula = pred~obs,
+                          #           data = res_full[res_full$inter == inter & res_full$method == method, ])
+                          res_full_tmp <- res_full[res_full$inter == inter & res_full$method == method, ]
+                          lmod <- get_r2(res_full_tmp$obs, res_full_tmp$pred)
                           rsq <- rbind(rsq,
                                        data.frame(inter = inter,
                                                   method = method,
-                                                  r2 = summary(lmod)$r.squared))
+                                                  r2 = lmod)) #summary(lmod)$r.squared))
                         }
                         
                         return(rsq)
                         
                       }))
-
-test <- res_full %>% filter(method == 'second_order_ridge', inter == "Phytoplankton\nbiomass / FALSE" ) 
 
 rsq$invasives <- grepl('TRUE', rsq$inter)
 
@@ -518,7 +522,10 @@ rsq$dataset <- factor(rsq$dataset,
 
 rsq$natives <- !rsq$invasives
 
-# R^2 values, stitching method & regression with l1 regularization
+
+### R^2 values, 
+### stitching method & regression with l1 regularization
+
 rsq %>% filter(!method %in% c('first_order_ridge', 'second_order_ridge')) %>% 
   ggplot(aes(x = method, y = r2, fill = interaction(method, natives), color = interaction(method, natives))) +
   geom_bar(stat = 'identity',
@@ -724,8 +731,6 @@ ggsave(filename = '../plots/stitching_vs_regression_top_bottom_absErr.pdf',
        height = 150,
        units = 'mm',
        limitsize = F)
-
-
 
   p_regression <- ggplot(loo_fits$loo_res_second_order, aes(x = obs, y = pred)) + geom_point() + 
     theme_bw() + geom_abline() + xlab('Observed') + ylab('Predicted') + 
