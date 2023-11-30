@@ -504,5 +504,77 @@ for (ds in 1:length(unique(emp_int$dataset))) {
 
 
 
+### ILLUSTRATE LANDSCAPE WITH STRONG BUT SPARSE HOIs
+
+set.seed(1) # for reproducibility
+f_i <- rnorm(n = N, mean = 0, sd = 1)
+f_ij <- matrix(rnorm(N^2,
+                     mean = 0,
+                     sd = 1),
+               nrow = N)
+
+simLandscape <- simulateLandscape(f_i, f_ij, alpha = 0.1)
+which_comms <- simLandscape$sp_1 == 1 & simLandscape$sp_2 == 1 & simLandscape$sp_3 == 1
+simLandscape$fun[which_comms] <- simLandscape$fun[which_comms] + 3*max(f_ij)
+
+gedf <- makeGEdata(matrix2string(simLandscape))
+gedf$group <- gedf$knock_in
+gedf$hoi <- gedf$knock_in %in% c('sp_1', 'sp_2', 'sp_3') &
+  grepl('sp_1', paste(gedf$background, gedf$knock_in, sep = ',')) &
+  grepl('sp_2', paste(gedf$background, gedf$knock_in, sep = ',')) &
+  grepl('sp_3', paste(gedf$background, gedf$knock_in, sep = ','))
+gedf$group <- paste(gedf$group, gedf$hoi)
+
+fees <- do.call(rbind,
+                lapply(unique(gedf$group),
+                       FUN = function(grp) {
+                         
+                         mylm <- lm(d_f ~ background_f,
+                                    data = gedf[gedf$group == grp, ])
+                         return(data.frame(group = grp,
+                                           knock_in = unique(gedf$knock_in[gedf$group == grp]),
+                                           a = mylm$coefficients[1],
+                                           b = mylm$coefficients[2]))
+                         
+                       }))
+
+ggplot(gedf,
+         aes(x = background_f, y = d_f, shape = hoi)) +
+  geom_abline(slope = 0, intercept = 0, color = 'gray') +
+  geom_point(cex = 3) +
+  geom_abline(data = fees,
+              aes(slope = b, intercept = a, color = b)) +
+  scale_color_gradient2(low = 'firebrick1',
+                        high = 'deepskyblue',
+                        mid = 'black') +
+  scale_shape_manual(values = c(16, 1)) +
+  scale_x_continuous(name = 'Background function [a.u.]') +
+  scale_y_continuous(name = expression(paste(Delta*italic(F), ' [a.u.]'))) +
+  facet_wrap(~ knock_in,
+             ncol = 3,
+             labeller = labeller(knock_in = setNames(paste('species ', 1:N, sep = ''),
+                                                     paste('sp_', 1:N, sep = '')))) +
+  theme_bw() +
+  theme(aspect.ratio = 0.6,
+        panel.grid = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 16),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_text(size = 16),
+        legend.position = 'none') +
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
+
+ggsave(filename = '../plots/synthLandscapes/example_hoi.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 150,
+       height = 125,
+       units = 'mm',
+       limitsize = F)
+
+
 
 

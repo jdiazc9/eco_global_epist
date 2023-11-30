@@ -242,6 +242,8 @@ plotFEEs_clean <- function(df) {
     annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
   print(myplot)
   
+  return(myplot)
+  
 }
 
 # wrapper function to plot a fitness graph
