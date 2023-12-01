@@ -462,13 +462,13 @@ res_full %>% filter(!method %in% c('first_order_ridge', 'second_order_ridge')) %
   annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
   annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
 
-ggsave(filename = '../plots/stitching_vs_regression.pdf',
-       device = 'pdf',
-       dpi = 600,
-       width = 300,
-       height = 200,
-       units = 'mm',
-       limitsize = F)
+# ggsave(filename = '../plots/stitching_vs_regression.pdf',
+#        device = 'pdf',
+#        dpi = 600,
+#        width = 300,
+#        height = 200,
+#        units = 'mm',
+#        limitsize = F)
 
 #############################
 ## plot R^2 for each model ##
@@ -560,13 +560,13 @@ rsq %>% filter(!method %in% c('first_order_ridge', 'second_order_ridge')) %>%
   annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
 
 
-ggsave(filename = '../plots/stitching_vs_regression_R2.pdf',
-       device = 'pdf',
-       dpi = 600,
-       width = 200,
-       height = 150,
-       units = 'mm',
-       limitsize = F)
+# ggsave(filename = '../plots/stitching_vs_regression_R2.pdf',
+#        device = 'pdf',
+#        dpi = 600,
+#        width = 200,
+#        height = 150,
+#        units = 'mm',
+#        limitsize = F)
 
 ##############################################
 ##  plot R^2 values,                        ##
@@ -606,13 +606,13 @@ rsq %>% filter(!method %in% c('stitching')) %>%
   annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
   annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
 
-ggsave(filename = '../plots/ridge_vs_lasso_R2.pdf',
-       device = 'pdf',
-       dpi = 600,
-       width = 200,
-       height = 150,
-       units = 'mm',
-       limitsize = F)
+# ggsave(filename = '../plots/ridge_vs_lasso_R2.pdf',
+#        device = 'pdf',
+#        dpi = 600,
+#        width = 200,
+#        height = 150,
+#        units = 'mm',
+#        limitsize = F)
 
 #########################################
 ##  plot unregularized regression R^2  ##
@@ -632,15 +632,24 @@ lm_res %>% pivot_longer(-Dataset) %>% ggplot(aes(x = name, y = value, fill = nam
         axis.ticks.x = element_blank(),
         #panel.border = element_blank(),
         panel.background = element_blank()) +
+  scale_fill_manual(values = c('gray', 'black')) +
   facet_wrap(~Dataset, nrow = 1) +
   ylab(expression(R^2)) + 
   labs(fill = '') + 
   ggtitle('Summary of unregularized regression fits')
 
+ggsave(filename = '../plots/unregR2.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 230,
+       height = 150,
+       units = 'mm',
+       limitsize = F)
+
 
 # top and bottom-performing communities
 threshold <- 0.1
-top_bottom <- do.call(data.frame, aggregate(formula = obs ~ inter,
+top_bottom <- do.call(data.frame, aggregate(obs ~ inter,
                                   data = res_full,
                                   FUN = function(x) quantile(x, probs = c(threshold, 1 - threshold))))
 colnames(top_bottom)[2:3] <- c('lower_bound', 'upper_bound')

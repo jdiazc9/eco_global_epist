@@ -394,13 +394,13 @@ res_full %>% filter(!method %in% c('first_order_ridge', 'second_order_ridge')) %
   annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf, size=0.5) +
   annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5)
 
-ggsave(filename = '../plots/stitching_vs_regression.pdf',
-       device = 'pdf',
-       dpi = 600,
-       width = 300,
-       height = 200,
-       units = 'mm',
-       limitsize = F)
+# ggsave(filename = '../plots/stitching_vs_regression.pdf',
+#        device = 'pdf',
+#        dpi = 600,
+#        width = 300,
+#        height = 200,
+#        units = 'mm',
+#        limitsize = F)
 
 # plot R squared
 
@@ -476,13 +476,13 @@ rsq %>% filter(!method %in% c('first_order_ridge', 'second_order_ridge')) %>%
   annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
   annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
 
-#ggsave(filename = '../plots/stitching_vs_regression_R2.pdf',
-       device = 'pdf',
-       dpi = 600,
-       width = 200,
-       height = 150,
-       units = 'mm',
-       limitsize = F)
+# ggsave(filename = '../plots/stitching_vs_regression_R2.pdf',
+#        device = 'pdf',
+#        dpi = 600,
+#        width = 200,
+#        height = 150,
+#        units = 'mm',
+#        limitsize = F)
 
 ### new plot to compare ridge vs. lasso 
 rsq %>% filter(!method %in% c('stitching')) %>% 
@@ -492,21 +492,20 @@ rsq %>% filter(!method %in% c('stitching')) %>%
            position = 'dodge') +
   facet_wrap(~dataset,
              nrow = 1) +
-  scale_y_continuous(name = 'R2',
+  scale_y_continuous(name = expression(paste(italic(R)^2, ' predictions vs. observations')),
                      limits = c(0, 1),
                      breaks = pretty_breaks(n = 4)) +
-  scale_color_manual(values = c('#99d7dc', '#176766', '#b33a3b', 'darkred',
+  scale_color_manual(values = c('#99d7dc', '#ced124', '#176766', '#747512',
                                 'white', 'white', 'white', 'white')) +
   scale_fill_manual(values = c('white', 'white', 'white', 'white',
-                               '#99d7dc', '#176766', '#b33a3b', 'darkred')) +
+                               '#99d7dc', '#ced124', '#176766', '#747512')) +
   theme_bw() +
   theme(panel.grid = element_blank(),
         strip.background = element_blank(),
-        strip.text = element_text(face = 'italic',
-                                  size = 10),
+        strip.text = element_text(size = 14),
         aspect.ratio = 1.6,
-        #axis.text = element_text(size = 16),
-        #axis.title = element_text(size = 18),
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
         axis.title.x = element_blank(),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
@@ -517,6 +516,14 @@ rsq %>% filter(!method %in% c('stitching')) %>%
   annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf,size=0.5) +
   annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
   annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
+
+ggsave(filename = '../plots/ridge_vs_regression_R2.pdf',
+       device = 'pdf',
+       dpi = 600,
+       width = 200,
+       height = 150,
+       units = 'mm',
+       limitsize = F)
 
 
 # top and bottom-performing communities
@@ -543,10 +550,10 @@ ggplot(res_top_bottom, aes(x = method, y = rel_err, fill = interaction(method, !
              scales = 'free_y') +
   scale_y_continuous(name = expression(log[10]~'|'*italic(F)['pred'] - italic(F)['obs']*'|'*'/'*italic(F)['obs']),
                      breaks = pretty_breaks(n = 4)) +
-  scale_color_manual(values = c('#99d7dc', '#176766', '#b33a3b',
-                                'black', 'black', 'black')) +
-  scale_fill_manual(values = c('white', 'white', 'white',
-                               '#99d7dc', '#176766', '#b33a3b')) +
+  scale_color_manual(values = c('#99d7dc', '#ced124', '#176766', '#747512', '#b33a3b',
+                                'black', 'black', 'black', 'black', 'black')) +
+  scale_fill_manual(values = c('white', 'white', 'white', 'white', 'white',
+                               '#99d7dc', '#ced124', '#176766', '#747512', '#b33a3b')) +
   theme_bw() +
   theme(panel.grid = element_blank(),
         strip.background = element_blank(),
@@ -566,7 +573,7 @@ ggplot(res_top_bottom, aes(x = method, y = rel_err, fill = interaction(method, !
   annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
   annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
 
-#ggsave(filename = '../plots/stitching_vs_regression_top_bottom_relErr.pdf',
+ggsave(filename = '../plots/ridge_vs_regression_top_bottom_relErr.pdf',
        device = 'pdf',
        dpi = 600,
        width = 230,
@@ -580,12 +587,12 @@ ggplot(res_top_bottom, aes(x = method, y = err, fill = interaction(method, !inva
   facet_wrap(~dataset,
              nrow = 1,
              scales = 'free_y') +
-  scale_y_continuous(name = expression(log[10]~'|'*italic(F)['pred'] - italic(F)['obs']*'|'*'/'*italic(F)['obs']),
+  scale_y_continuous(name = expression('|'*italic(F)['pred'] - italic(F)['obs']*'|'),
                      breaks = pretty_breaks(n = 4)) +
-  scale_color_manual(values = c('#99d7dc', '#176766', '#b33a3b',
-                                'black', 'black', 'black')) +
-  scale_fill_manual(values = c('white', 'white', 'white',
-                               '#99d7dc', '#176766', '#b33a3b')) +
+  scale_color_manual(values = c('#99d7dc', '#ced124', '#176766', '#747512', '#b33a3b',
+                                'black', 'black', 'black', 'black', 'black')) +
+  scale_fill_manual(values = c('white', 'white', 'white', 'white', 'white',
+                               '#99d7dc', '#ced124', '#176766', '#747512', '#b33a3b')) +
   theme_bw() +
   theme(panel.grid = element_blank(),
         strip.background = element_blank(),
@@ -605,7 +612,7 @@ ggplot(res_top_bottom, aes(x = method, y = err, fill = interaction(method, !inva
   annotate("segment", x=-Inf, xend=Inf, y=Inf, yend=Inf, size=0.5) +
   annotate("segment", x=Inf, xend=Inf, y=-Inf, yend=Inf,size=0.5)
 
-#ggsave(filename = '../plots/stitching_vs_regression_top_bottom_absErr.pdf',
+ggsave(filename = '../plots/ridge_vs_regression_top_bottom_absErr.pdf',
        device = 'pdf',
        dpi = 600,
        width = 230,
@@ -617,20 +624,20 @@ ggplot(res_top_bottom, aes(x = method, y = err, fill = interaction(method, !inva
 
 
 
-test <- rbind(cbind(ridge_rsq, type = 'ridge') ,cbind(rsq, type = 'lasso'))
-#test %>% pivot_longer(r2) %>% 
-  
-test %>% ggplot(aes(x = method, y = r2, fill = interaction(method, type))) + geom_boxplot(position = 'dodge') + 
-  geom_bar(stat = 'identity',
-             width = 0.6,  position = 'dodge') +
-  facet_wrap(~dataset, nrow = 1) + # geom_point() + facet_wrap(~method) + 
-theme_classic()
-
-
-test %>% filter(method == "second_order") %>% 
-  ggplot(aes(x = dataset, y = r2, fill = type)) + 
-  geom_bar(stat = 'identity',  position = 'dodge') + 
-  theme_classic()
+# test <- rbind(cbind(ridge_rsq, type = 'ridge') ,cbind(rsq, type = 'lasso'))
+# #test %>% pivot_longer(r2) %>% 
+#   
+# test %>% ggplot(aes(x = method, y = r2, fill = interaction(method, type))) + geom_boxplot(position = 'dodge') + 
+#   geom_bar(stat = 'identity',
+#              width = 0.6,  position = 'dodge') +
+#   facet_wrap(~dataset, nrow = 1) + # geom_point() + facet_wrap(~method) + 
+# theme_classic()
+# 
+# 
+# test %>% filter(method == "second_order") %>% 
+#   ggplot(aes(x = dataset, y = r2, fill = type)) + 
+#   geom_bar(stat = 'identity',  position = 'dodge') + 
+#   theme_classic()
 
 
 
